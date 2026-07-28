@@ -2,6 +2,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -561,19 +562,22 @@ function PlayerRow({
           </Pressable>
         ) : null}
         <Pressable
-          onPress={() =>
+          onPress={() => {
+            const remove = () => dispatch({ type: 'REMOVE_PLAYER', playerId: player.id });
+            if (Platform.OS === 'web') {
+              if (typeof window !== 'undefined' && window.confirm(`Retirer ${player.name} du tournoi ?`)) {
+                remove();
+              }
+              return;
+            }
             Alert.alert('Supprimer', `Retirer ${player.name} ?`, [
               { text: 'Annuler', style: 'cancel' },
-              {
-                text: 'Supprimer',
-                style: 'destructive',
-                onPress: () => dispatch({ type: 'REMOVE_PLAYER', playerId: player.id }),
-              },
-            ])
-          }
+              { text: 'Supprimer', style: 'destructive', onPress: remove },
+            ]);
+          }}
           style={[styles.smallButton, styles.smallButtonDanger]}
         >
-          <Text style={styles.smallButtonText}>X</Text>
+          <Text style={styles.smallButtonText}>Retirer</Text>
         </Pressable>
       </View>
     </View>
