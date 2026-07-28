@@ -261,6 +261,38 @@ export function getAverageStack(tournament: Tournament) {
   return Math.round(getTotalChips(tournament) / activeCount);
 }
 
+export function getAverageStackInBigBlinds(
+  tournament: Tournament,
+  bigBlind?: number
+): number | null {
+  const bb =
+    bigBlind ??
+    (() => {
+      const level = tournament.levels[tournament.currentLevelIndex];
+      if (!level || isBreakLevel(level) || level.bigBlind <= 0) {
+        return 0;
+      }
+      return level.bigBlind;
+    })();
+  if (bb <= 0) {
+    return null;
+  }
+  const avg = getAverageStack(tournament);
+  if (avg <= 0) {
+    return null;
+  }
+  return Math.round(avg / bb);
+}
+
+export function formatAverageStack(tournament: Tournament): string {
+  const avg = getAverageStack(tournament);
+  const bb = getAverageStackInBigBlinds(tournament);
+  if (bb === null) {
+    return formatChips(avg);
+  }
+  return `${formatChips(avg)} · ${bb}bb`;
+}
+
 export function getMaxBlindLevel(levels: BlindLevel[]): number {
   return levels.reduce((max, level) => {
     if (isBreakLevel(level)) {
@@ -578,14 +610,33 @@ export function tournamentReducer(
         timerStatus: 'paused',
         remainingSeconds: getComputedRemainingSeconds(state),
       });
-    case 'TICK':
-      if (state.timerStatus !== 'running' || state.remainingSeconds <= 0) {
+    case 'TICK': {
+      if (state.timerStatus !== 'running') {
         return state;
+      }
+      if (state.remainingSeconds > 1) {
+        return touch({
+          ...state,
+          remainingSeconds: state.remainingSeconds - 1,
+        });
+      }
+      // remainingSeconds is 0 or 1 → end of level
+      const nextIndex = state.currentLevelIndex + 1;
+      const nextLevel = state.levels[nextIndex];
+      if (nextLevel) {
+        return touch({
+          ...state,
+          currentLevelIndex: nextIndex,
+          remainingSeconds: nextLevel.durationMinutes * 60,
+          timerStatus: 'running',
+        });
       }
       return touch({
         ...state,
-        remainingSeconds: state.remainingSeconds - 1,
+        remainingSeconds: 0,
+        timerStatus: 'paused',
       });
+    }
     case 'ADJUST_TIME':
       return touch({
         ...state,

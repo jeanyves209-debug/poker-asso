@@ -64,12 +64,13 @@ function createRoomReducer(readOnly: boolean) {
       return state;
     }
     if (readOnly && action.type === 'TICK') {
+      // Display only counts down visually; level changes come from control via sync.
       if (state.timerStatus !== 'running' || state.remainingSeconds <= 0) {
         return state;
       }
       return {
         ...state,
-        remainingSeconds: state.remainingSeconds - 1,
+        remainingSeconds: Math.max(0, state.remainingSeconds - 1),
       };
     }
     return tournamentReducer(state, action);
@@ -167,7 +168,10 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
 
     const interval = setInterval(() => {
       if (!readOnly) {
-        lastActionRef.current = 'TICK';
+        const current = tournamentRef.current;
+        // About to hit 0 → auto-advance or end: sync to cloud for the display.
+        lastActionRef.current =
+          current && current.remainingSeconds <= 1 ? 'NEXT_LEVEL' : 'TICK';
       }
       dispatch({ type: 'TICK' });
     }, 1000);

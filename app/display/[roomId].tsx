@@ -4,11 +4,9 @@ import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-na
 
 import { pokerTheme } from '@/constants/theme';
 import { isRemoteSyncEnabled } from '@/lib/config';
-import { useFullscreen } from '@/lib/use-fullscreen';
-import { getControlUrl } from '@/lib/tournament-sync';
-import { useTournamentRoom } from '@/lib/use-tournament-room';
 import {
   getBlindLevelDisplayNumber,
+  formatAverageStack,
   formatBlinds,
   formatChips,
   formatLevelDurationLabel,
@@ -26,6 +24,11 @@ import {
   isBreakLevel,
   isLateRegistrationOpen,
 } from '@/lib/tournament-utils';
+import { unlockTimerSound } from '@/lib/timer-sound';
+import { useFullscreen } from '@/lib/use-fullscreen';
+import { useOneMinuteWarning } from '@/lib/use-one-minute-warning';
+import { getControlUrl } from '@/lib/tournament-sync';
+import { useTournamentRoom } from '@/lib/use-tournament-room';
 
 export default function DisplayScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
@@ -33,6 +36,12 @@ export default function DisplayScreen() {
   const { tournament, isLoading } = useTournamentRoom(roomCode, { readOnly: true });
   const { width, height } = useWindowDimensions();
   const { isFullscreen, toggle, supported } = useFullscreen();
+  useOneMinuteWarning(tournament);
+
+  const handleFullscreen = () => {
+    void unlockTimerSound();
+    toggle();
+  };
 
   const isLandscape = width > height;
   const fitScale = Math.min(width / 1000, height / (isLandscape ? 560 : 820), 1.35);
@@ -120,6 +129,7 @@ export default function DisplayScreen() {
 
   return (
     <View style={styles.container}>
+      <Pressable style={styles.soundUnlock} onPress={() => void unlockTimerSound()}>
       <View style={[styles.page, isLandscape ? styles.pageLandscape : styles.pagePortrait]}>
         <View style={styles.headerRow}>
           <View style={styles.topBar}>
@@ -142,7 +152,10 @@ export default function DisplayScreen() {
           </View>
 
           {supported ? (
-            <Pressable onPress={toggle} style={styles.fullscreenButton}>
+            <Pressable
+              onPress={handleFullscreen}
+              style={styles.fullscreenButton}
+            >
               <Text style={styles.fullscreenLabel}>
                 {isFullscreen ? 'Quitter plein écran' : 'Plein écran'}
               </Text>
@@ -225,7 +238,7 @@ export default function DisplayScreen() {
                 Stack moyen
               </Text>
               <Text style={[styles.statValueLarge, { fontSize: 28 * scale }]}>
-                {formatChips(stats.avgStack)}
+                {formatAverageStack(tournament)}
               </Text>
             </View>
 
@@ -294,6 +307,7 @@ export default function DisplayScreen() {
           </View>
         </View>
       </View>
+      </Pressable>
     </View>
   );
 }
@@ -302,6 +316,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: pokerTheme.background,
+  },
+  soundUnlock: {
+    flex: 1,
   },
   page: {
     flex: 1,

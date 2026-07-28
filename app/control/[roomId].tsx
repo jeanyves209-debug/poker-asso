@@ -17,11 +17,14 @@ import { ActionButton, ScreenContainer, SectionTitle, StatCard } from '@/compone
 import { pokerTheme } from '@/constants/theme';
 import { copyToClipboard, getDisplayUrlAsync } from '@/lib/tournament-sync';
 import { isRemoteSyncEnabled } from '@/lib/config';
+import { unlockTimerSound } from '@/lib/timer-sound';
+import { useOneMinuteWarning } from '@/lib/use-one-minute-warning';
 import { useTournamentRoom } from '@/lib/use-tournament-room';
 import {
   canAddAddOn,
   canAddRebuy,
   getBlindLevelDisplayNumber,
+  formatAverageStack,
   formatBlinds,
   formatChips,
   formatLevelDurationLabel,
@@ -52,6 +55,7 @@ export default function ControlScreen() {
   const roomCode = (roomId ?? '').toUpperCase();
   const { tournament, dispatch, isLoading, cloudSynced, syncToCloud, refresh } =
     useTournamentRoom(roomCode);
+  useOneMinuteWarning(tournament);
   const [tab, setTab] = useState<TabKey>('timer');
   const [playerName, setPlayerName] = useState('');
   const [copied, setCopied] = useState(false);
@@ -326,11 +330,12 @@ export default function ControlScreen() {
             <View style={styles.buttonRow}>
               <ActionButton
                 label={tournament.timerStatus === 'running' ? 'Pause timer' : 'Lancer timer'}
-                onPress={() =>
+                onPress={() => {
+                  void unlockTimerSound();
                   dispatch({
                     type: tournament.timerStatus === 'running' ? 'PAUSE' : 'PLAY',
-                  })
-                }
+                  });
+                }}
               />
               <ActionButton
                 label="Niv. +"
@@ -404,7 +409,7 @@ export default function ControlScreen() {
             </View>
 
             <View style={styles.statsRow}>
-              <StatCard label="Stack moyen" value={formatChips(stats.avgStack)} />
+              <StatCard label="Stack moyen" value={formatAverageStack(tournament)} />
               <StatCard label="Jetons en jeu" value={formatChips(stats.totalChips)} />
             </View>
           </View>
