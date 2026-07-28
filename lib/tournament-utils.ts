@@ -70,8 +70,8 @@ export function normalizeTournament(raw: LegacyTournament): Tournament {
     })),
     currentLevelIndex: raw.currentLevelIndex,
     timerStatus: raw.timerStatus,
-    remainingSeconds: raw.remainingSeconds,
-    updatedAt: raw.updatedAt,
+    remainingSeconds: Number(raw.remainingSeconds) || 0,
+    updatedAt: Number(raw.updatedAt) || Date.now(),
   };
 }
 

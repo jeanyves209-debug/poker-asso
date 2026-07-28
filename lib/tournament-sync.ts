@@ -109,11 +109,17 @@ async function saveToLocalEndpoints(tournament: Tournament): Promise<void> {
 
 export async function saveTournament(
   tournament: Tournament,
-  options?: { immediate?: boolean }
+  options?: { immediate?: boolean; cloud?: boolean }
 ): Promise<boolean> {
   await writeLocalTournament(tournament);
   await storageSetItem(LAST_ACTIVE_KEY, tournament.roomCode);
   await updateRecentIndex(tournament);
+
+  publishTournament(tournament);
+
+  if (options?.cloud === false) {
+    return true;
+  }
 
   void saveToLocalEndpoints(tournament);
 
@@ -128,7 +134,6 @@ export async function saveTournament(
     }
   }
 
-  publishTournament(tournament);
   return cloudSaved;
 }
 

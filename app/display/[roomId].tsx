@@ -4,7 +4,6 @@ import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-na
 
 import { pokerTheme } from '@/constants/theme';
 import { isRemoteSyncEnabled } from '@/lib/config';
-import { useLiveRemainingSeconds } from '@/lib/use-live-timer';
 import { useFullscreen } from '@/lib/use-fullscreen';
 import { getControlUrl } from '@/lib/tournament-sync';
 import { useTournamentRoom } from '@/lib/use-tournament-room';
@@ -32,7 +31,6 @@ export default function DisplayScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const roomCode = (roomId ?? '').toUpperCase();
   const { tournament, isLoading } = useTournamentRoom(roomCode, { readOnly: true });
-  const liveRemainingSeconds = useLiveRemainingSeconds(tournament);
   const { width, height } = useWindowDimensions();
   const { isFullscreen, toggle, supported } = useFullscreen();
 
@@ -101,7 +99,7 @@ export default function DisplayScreen() {
     );
   }
 
-  const isLowTime = liveRemainingSeconds <= 60;
+  const isLowTime = tournament.remainingSeconds <= 60;
   const durationLabel = formatLevelDurationLabel(currentLevel);
   const currentBlindNumber = getBlindLevelDisplayNumber(
     tournament.levels,
@@ -195,7 +193,7 @@ export default function DisplayScreen() {
                 isLowTime && styles.timerWarning,
               ]}
             >
-              {formatTime(liveRemainingSeconds)}
+              {formatTime(tournament.remainingSeconds)}
             </Text>
 
             <View

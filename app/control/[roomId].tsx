@@ -17,7 +17,6 @@ import { ActionButton, ScreenContainer, SectionTitle, StatCard } from '@/compone
 import { pokerTheme } from '@/constants/theme';
 import { copyToClipboard, getDisplayUrlAsync } from '@/lib/tournament-sync';
 import { isRemoteSyncEnabled } from '@/lib/config';
-import { useLiveRemainingSeconds } from '@/lib/use-live-timer';
 import { useTournamentRoom } from '@/lib/use-tournament-room';
 import {
   canAddAddOn,
@@ -53,7 +52,6 @@ export default function ControlScreen() {
   const roomCode = (roomId ?? '').toUpperCase();
   const { tournament, dispatch, isLoading, cloudSynced, syncToCloud, refresh } =
     useTournamentRoom(roomCode);
-  const liveRemainingSeconds = useLiveRemainingSeconds(tournament);
   const [tab, setTab] = useState<TabKey>('timer');
   const [playerName, setPlayerName] = useState('');
   const [copied, setCopied] = useState(false);
@@ -318,7 +316,7 @@ export default function ControlScreen() {
               </Text>
             )}
             <Text style={styles.levelDuration}>{formatLevelDurationLabel(currentLevel)}</Text>
-            <Text style={styles.timer}>{formatTime(liveRemainingSeconds)}</Text>
+            <Text style={styles.timer}>{formatTime(tournament.remainingSeconds)}</Text>
             {nextLevel ? (
               <Text style={styles.nextLevel}>
                 Suivant : {formatNextLevelPreview(nextLevel)}

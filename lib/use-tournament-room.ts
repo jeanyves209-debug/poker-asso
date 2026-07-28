@@ -8,23 +8,24 @@ import {
   saveTournament,
   subscribeToTournament,
 } from '@/lib/tournament-sync';
-import { getComputedRemainingSeconds } from '@/lib/tournament-utils';
-import { tournamentReducer } from '@/lib/tournament-utils';
+import {
+  getComputedRemainingSeconds,
+  normalizeTournament,
+  tournamentReducer,
+} from '@/lib/tournament-utils';
 import { Tournament, TournamentAction } from '@/types/tournament';
 
-const POLL_DISPLAY_RUNNING_MS = 1000;
-const POLL_DISPLAY_IDLE_MS = 2000;
+const POLL_DISPLAY_RUNNING_MS = 2000;
+const POLL_DISPLAY_IDLE_MS = 3000;
 
-function adjustRunningTimer(tournament: Tournament): Tournament {
+function catchUpRunningTimer(tournament: Tournament): Tournament {
   if (tournament.timerStatus !== 'running') {
     return tournament;
   }
-  const remaining = getComputedRemainingSeconds(tournament);
   return {
     ...tournament,
-    remainingSeconds: remaining,
+    remainingSeconds: getComputedRemainingSeconds(tournament),
     updatedAt: Date.now(),
-    timerStatus: remaining > 0 ? 'running' : 'paused',
   };
 }
 
@@ -33,7 +34,7 @@ function roomReducer(
   action: TournamentAction
 ): Tournament | null {
   if (action.type === 'LOAD') {
-    return adjustRunningTimer(action.tournament);
+    return catchUpRunningTimer(normalizeTournament(action.tournament));
   }
   if (!state) {
     return state;
@@ -66,16 +67,18 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
   const [cloudSynced, setCloudSynced] = useState<boolean | null>(null);
   const tournamentRef = useRef<Tournament | null>(null);
   const pushedOnMountRef = useRef(false);
+  const lastActionRef = useRef<TournamentAction['type'] | null>(null);
 
   useEffect(() => {
     tournamentRef.current = tournament;
   }, [tournament]);
 
   const applyRemote = useCallback((remote: Tournament) => {
-    const adjusted = adjustRunningTimer(remote);
-    if (shouldApplyRemoteState(tournamentRef.current, adjusted)) {
-      dispatch({ type: 'LOAD', tournament: adjusted });
+    const normalized = normalizeTournament(remote);
+    if (!shouldApplyRemoteState(tournamentRef.current, normalized)) {
+      return;
     }
+    dispatch({ type: 'LOAD', tournament: normalized });
   }, []);
 
   const refresh = useCallback(async () => {
@@ -138,7 +141,22 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
     }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [readOnly, tournament, refresh]);
+  }, [readOnly, tournament?.timerStatus, tournament?.roomCode, refresh]);
+
+  useEffect(() => {
+    if (!tournament || tournament.timerStatus !== 'running') {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (!readOnly) {
+        lastActionRef.current = 'TICK';
+      }
+      dispatch({ type: 'TICK' });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [readOnly, tournament?.timerStatus, tournament?.roomCode]);
 
   useEffect(() => {
     if (readOnly || !tournament || pushedOnMountRef.current) {
@@ -152,6 +170,15 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
     if (readOnly || !tournament) {
       return;
     }
+
+    const action = lastActionRef.current;
+    lastActionRef.current = null;
+
+    if (action === 'TICK') {
+      void saveTournament(tournament, { cloud: false });
+      return;
+    }
+
     void saveTournament(tournament, { immediate: true }).then(setCloudSynced);
   }, [readOnly, tournament]);
 
@@ -169,6 +196,7 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
       if (readOnly) {
         return;
       }
+      lastActionRef.current = action.type;
       dispatch(action);
     },
     [readOnly]
