@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import { isRemoteSyncEnabled } from '@/lib/config';
-import { isLiveStreamSupported, subscribeToTournamentStream } from '@/lib/remote-stream';
+import { subscribeToTournamentStream } from '@/lib/remote-stream';
 import {
   loadTournament,
   pushTournamentToCloud,
@@ -12,8 +12,8 @@ import { getComputedRemainingSeconds } from '@/lib/tournament-utils';
 import { tournamentReducer } from '@/lib/tournament-utils';
 import { Tournament, TournamentAction } from '@/types/tournament';
 
-const POLL_STREAM_FALLBACK_MS = 30000;
-const POLL_NO_STREAM_MS = 2000;
+const POLL_DISPLAY_RUNNING_MS = 1000;
+const POLL_DISPLAY_IDLE_MS = 2000;
 
 function adjustRunningTimer(tournament: Tournament): Tournament {
   if (tournament.timerStatus !== 'running') {
@@ -126,7 +126,13 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
       return;
     }
 
-    const intervalMs = isLiveStreamSupported() ? POLL_STREAM_FALLBACK_MS : POLL_NO_STREAM_MS;
+    const running = tournament?.timerStatus === 'running';
+    const intervalMs = readOnly
+      ? running
+        ? POLL_DISPLAY_RUNNING_MS
+        : POLL_DISPLAY_IDLE_MS
+      : POLL_DISPLAY_IDLE_MS;
+
     const interval = setInterval(() => {
       void refresh();
     }, intervalMs);

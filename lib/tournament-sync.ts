@@ -121,7 +121,8 @@ export async function saveTournament(
   const cloudUrls = (await getActiveSyncUrls()).filter((url) => !isLocalNetworkUrl(url));
   if (cloudUrls.length > 0) {
     if (options?.immediate) {
-      cloudSaved = await flushScheduledCloudSave();
+      await flushScheduledCloudSave();
+      cloudSaved = await saveToCloudEndpoints(tournament);
     } else {
       scheduleCloudSave(tournament);
     }

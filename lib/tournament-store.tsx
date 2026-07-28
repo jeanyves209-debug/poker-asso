@@ -53,7 +53,7 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
   }, [tournament]);
 
   const persist = useCallback(async (next: Tournament) => {
-    await saveTournament(next);
+    await saveTournament(next, { immediate: true });
     publishTournament(next);
   }, []);
 
@@ -98,7 +98,7 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
     const loaded = await loadTournament(roomCode.toUpperCase());
     if (loaded) {
       dispatch({ type: 'LOAD', tournament: loaded });
-      await saveTournament(loaded);
+      await saveTournament(loaded, { immediate: true });
     }
     return loaded;
   }, []);
