@@ -13,6 +13,14 @@ import {
   TournamentSettings,
 } from '@/types/tournament';
 
+export function getComputedRemainingSeconds(tournament: Tournament, now = Date.now()): number {
+  if (tournament.timerStatus !== 'running') {
+    return tournament.remainingSeconds;
+  }
+  const elapsed = Math.floor((now - tournament.updatedAt) / 1000);
+  return Math.max(0, tournament.remainingSeconds - elapsed);
+}
+
 export function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -565,7 +573,11 @@ export function tournamentReducer(
     case 'PLAY':
       return touch({ ...state, timerStatus: 'running' });
     case 'PAUSE':
-      return touch({ ...state, timerStatus: 'paused' });
+      return touch({
+        ...state,
+        timerStatus: 'paused',
+        remainingSeconds: getComputedRemainingSeconds(state),
+      });
     case 'TICK':
       if (state.timerStatus !== 'running' || state.remainingSeconds <= 0) {
         return state;

@@ -8,7 +8,6 @@ import {
 } from '@/lib/remote-sync';
 import {
   getActiveSyncUrls,
-  getLocalSyncUrl,
   isAnySyncEnabled,
   isLocalNetworkUrl,
 } from '@/lib/sync-url';
@@ -272,13 +271,7 @@ export function getDisplayUrl(roomCode: string): string {
 }
 
 export async function getDisplayUrlAsync(roomCode: string): Promise<string> {
-  const base = buildDisplayPath(roomCode);
-  const localSync = await getLocalSyncUrl();
-  if (!localSync) {
-    return base;
-  }
-  const separator = base.includes('?') ? '&' : '?';
-  return `${base}${separator}sync=${encodeURIComponent(localSync)}`;
+  return buildDisplayPath(roomCode);
 }
 
 export function getControlUrl(roomCode: string): string {

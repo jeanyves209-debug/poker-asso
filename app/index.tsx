@@ -14,8 +14,7 @@ import {
 import { ActionButton, ScreenContainer, SectionTitle } from '@/components/ui';
 import { pokerTheme } from '@/constants/theme';
 import { isRemoteSyncEnabled } from '@/lib/config';
-import { checkLocalSyncHealth, checkRemoteSyncHealth } from '@/lib/remote-sync';
-import { isAnySyncEnabled } from '@/lib/sync-url';
+import { checkRemoteSyncHealth } from '@/lib/remote-sync';
 import {
   loadLastActiveRoomCode,
   loadRecentTournaments,
@@ -41,20 +40,12 @@ export default function HomeScreen() {
   const [recent, setRecent] = useState<SavedTournamentSummary[]>([]);
   const [lastActive, setLastActive] = useState<SavedTournamentSummary | null>(null);
   const [syncOnline, setSyncOnline] = useState<boolean | null>(null);
-  const [localSyncOnline, setLocalSyncOnline] = useState<boolean | null>(null);
 
   const refreshSaved = useCallback(async () => {
-    const anySync = await isAnySyncEnabled();
-    if (anySync) {
-      const [cloud, local] = await Promise.all([
-        isRemoteSyncEnabled() ? checkRemoteSyncHealth() : Promise.resolve(null),
-        checkLocalSyncHealth(),
-      ]);
-      setSyncOnline(cloud);
-      setLocalSyncOnline(local);
+    if (isRemoteSyncEnabled()) {
+      setSyncOnline(await checkRemoteSyncHealth());
     } else {
       setSyncOnline(null);
-      setLocalSyncOnline(null);
     }
 
     const [items, lastCode] = await Promise.all([
@@ -94,7 +85,7 @@ export default function HomeScreen() {
     setLoading(true);
     setError('');
     try {
-      if ((await isAnySyncEnabled()) && options?.joinRemote) {
+      if (isRemoteSyncEnabled() && options?.joinRemote) {
         void loadRoom(normalized);
         router.push(`/control/${normalized}`);
         return;
@@ -116,7 +107,7 @@ export default function HomeScreen() {
   };
 
   const handleJoin = async () => {
-    await openTournament(roomCode, { joinRemote: await isAnySyncEnabled() });
+    await openTournament(roomCode, { joinRemote: isRemoteSyncEnabled() });
   };
 
   return (
@@ -134,26 +125,24 @@ export default function HomeScreen() {
               : 'Vos tournois sont enregistrés sur cet appareil. Configurez EXPO_PUBLIC_SYNC_URL pour accéder depuis n’importe où.'}
           </Text>
 
-          {(isRemoteSyncEnabled() || localSyncOnline) ? (
+          {isRemoteSyncEnabled() ? (
             <View
               style={[
                 styles.syncBanner,
-                syncOnline === false && !localSyncOnline && styles.syncBannerOffline,
+                syncOnline === false && styles.syncBannerOffline,
               ]}
             >
               <Text
                 style={[
                   styles.syncBannerText,
-                  syncOnline === false && !localSyncOnline && styles.syncBannerTextOffline,
+                  syncOnline === false && styles.syncBannerTextOffline,
                 ]}
               >
-                {localSyncOnline
-                  ? 'Sync WiFi local active — affichage rapide'
-                  : syncOnline === null
-                    ? 'Vérification du serveur…'
-                    : syncOnline
-                      ? 'Sync cloud active'
-                      : 'Serveur cloud injoignable'}
+                {syncOnline === null
+                  ? 'Vérification du serveur…'
+                  : syncOnline
+                    ? 'Sync cloud active — écran TV en direct'
+                    : 'Serveur de sync injoignable'}
               </Text>
             </View>
           ) : null}

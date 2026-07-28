@@ -15,9 +15,9 @@ import { LevelSetupForm } from '@/components/LevelSetupForm';
 import { PayoutSetupForm } from '@/components/PayoutSetupForm';
 import { ActionButton, ScreenContainer, SectionTitle, StatCard } from '@/components/ui';
 import { pokerTheme } from '@/constants/theme';
-import { copyToClipboard, getDisplayUrlAsync, getLocalSyncUrl, setLocalSyncUrl } from '@/lib/tournament-sync';
+import { copyToClipboard, getDisplayUrlAsync } from '@/lib/tournament-sync';
 import { isRemoteSyncEnabled } from '@/lib/config';
-import { checkLocalSyncHealth } from '@/lib/remote-sync';
+import { useLiveRemainingSeconds } from '@/lib/use-live-timer';
 import { useTournamentRoom } from '@/lib/use-tournament-room';
 import {
   canAddAddOn,
@@ -53,29 +53,16 @@ export default function ControlScreen() {
   const roomCode = (roomId ?? '').toUpperCase();
   const { tournament, dispatch, isLoading, cloudSynced, syncToCloud, refresh } =
     useTournamentRoom(roomCode);
+  const liveRemainingSeconds = useLiveRemainingSeconds(tournament);
   const [tab, setTab] = useState<TabKey>('timer');
   const [playerName, setPlayerName] = useState('');
   const [copied, setCopied] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [displayUrl, setDisplayUrl] = useState('');
-  const [localSyncUrl, setLocalSyncUrlState] = useState('');
-  const [localSyncOnline, setLocalSyncOnline] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    void getLocalSyncUrl().then((url) => setLocalSyncUrlState(url ?? ''));
-  }, []);
 
   useEffect(() => {
     void getDisplayUrlAsync(roomCode).then(setDisplayUrl);
-  }, [roomCode, localSyncUrl]);
-
-  useEffect(() => {
-    if (!localSyncUrl.trim()) {
-      setLocalSyncOnline(null);
-      return;
-    }
-    void checkLocalSyncHealth().then(setLocalSyncOnline);
-  }, [localSyncUrl]);
+  }, [roomCode]);
 
   useEffect(() => {
     if (!isLoading && !tournament && roomCode && !isRemoteSyncEnabled()) {
@@ -147,17 +134,6 @@ export default function ControlScreen() {
     await copyToClipboard(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleSaveLocalSync = async () => {
-    await setLocalSyncUrl(localSyncUrl);
-    const url = await getDisplayUrlAsync(roomCode);
-    setDisplayUrl(url);
-    if (localSyncUrl.trim()) {
-      setLocalSyncOnline(await checkLocalSyncHealth());
-    } else {
-      setLocalSyncOnline(null);
-    }
   };
 
   const handleAddPlayer = () => {
@@ -256,14 +232,13 @@ export default function ControlScreen() {
           />
         </View>
 
-        {isRemoteSyncEnabled() && cloudSynced === false && !localSyncOnline ? (
+        {isRemoteSyncEnabled() && cloudSynced === false ? (
           <View style={[styles.syncCard, styles.syncCardError]}>
             <Text style={styles.syncCardTitle}>
-              Sync cloud en échec — l’écran TV peut avoir du retard
+              Sync cloud en échec — l’écran TV peut ne pas se mettre à jour
             </Text>
             <Text style={styles.syncCardHint}>
-              Configurez le serveur WiFi local (Paramètres) pour un affichage quasi instantané,
-              ou attendez 30 s (Render se réveille) puis appuyez sur « Forcer la sync ».
+              Attendez 30 s (Render se réveille) puis appuyez sur « Forcer la sync ».
             </Text>
             <ActionButton
               label={syncing ? 'Sync…' : 'Forcer la sync'}
@@ -281,12 +256,6 @@ export default function ControlScreen() {
               }}
               variant="secondary"
             />
-          </View>
-        ) : null}
-
-        {localSyncOnline ? (
-          <View style={[styles.syncCard, styles.syncCardOk]}>
-            <Text style={styles.syncCardTitle}>Sync WiFi local active — affichage rapide</Text>
           </View>
         ) : null}
 
@@ -349,7 +318,7 @@ export default function ControlScreen() {
               </Text>
             )}
             <Text style={styles.levelDuration}>{formatLevelDurationLabel(currentLevel)}</Text>
-            <Text style={styles.timer}>{formatTime(tournament.remainingSeconds)}</Text>
+            <Text style={styles.timer}>{formatTime(liveRemainingSeconds)}</Text>
             {nextLevel ? (
               <Text style={styles.nextLevel}>
                 Suivant : {formatNextLevelPreview(nextLevel)}
@@ -522,35 +491,6 @@ export default function ControlScreen() {
               maxBlindLevel={getMaxBlindLevel(tournament.levels)}
               onChange={(settings) => dispatch({ type: 'SET_SETTINGS', settings })}
             />
-
-            <Text style={styles.settingsGroupTitle}>Sync WiFi local (recommandé pour la TV)</Text>
-            <Text style={styles.settingsHint}>
-              Sur un PC du même WiFi : npm run sync-server (+ npm run serve:lan pour l’app HTTP locale).
-              Entrez l’IP du PC — délai téléphone → écran ~0,5 s. Utilisez http://IP:8080 sur le
-              téléphone et la TV (pas Vercel HTTPS, sinon le navigateur bloque le sync local).
-            </Text>
-            <SettingField
-              label="Adresse serveur local"
-              value={localSyncUrl}
-              onChange={setLocalSyncUrlState}
-              placeholder="192.168.1.42:3001"
-              onBlur={() => void handleSaveLocalSync()}
-            />
-            {localSyncUrl.trim() ? (
-              <Text
-                style={[
-                  styles.settingsHint,
-                  localSyncOnline === true && styles.localSyncOk,
-                  localSyncOnline === false && styles.localSyncError,
-                ]}
-              >
-                {localSyncOnline === null
-                  ? 'Vérification…'
-                  : localSyncOnline
-                    ? 'Serveur local joignable'
-                    : 'Serveur local injoignable — vérifiez que npm run sync-server tourne sur le PC'}
-              </Text>
-            ) : null}
           </View>
         ) : null}
       </ScrollView>
@@ -998,14 +938,6 @@ const styles = StyleSheet.create({
     color: pokerTheme.textMuted,
     fontSize: 13,
     lineHeight: 18,
-  },
-  localSyncOk: {
-    color: pokerTheme.gold,
-    fontWeight: '600',
-  },
-  localSyncError: {
-    color: pokerTheme.danger,
-    fontWeight: '600',
   },
   lateRegHint: {
     color: pokerTheme.gold,

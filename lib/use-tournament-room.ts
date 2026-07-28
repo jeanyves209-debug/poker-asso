@@ -1,33 +1,30 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
+import { isRemoteSyncEnabled } from '@/lib/config';
+import { isLiveStreamSupported, subscribeToTournamentStream } from '@/lib/remote-stream';
 import {
   loadTournament,
   pushTournamentToCloud,
   saveTournament,
   subscribeToTournament,
 } from '@/lib/tournament-sync';
-import { isAnySyncEnabled, isLocalSyncEnabled } from '@/lib/sync-url';
+import { getComputedRemainingSeconds } from '@/lib/tournament-utils';
 import { tournamentReducer } from '@/lib/tournament-utils';
 import { Tournament, TournamentAction } from '@/types/tournament';
 
-const POLL_LOCAL_RUNNING_MS = 400;
-const POLL_LOCAL_IDLE_MS = 800;
-const POLL_CLOUD_RUNNING_MS = 2000;
-const POLL_CLOUD_IDLE_MS = 5000;
+const POLL_STREAM_FALLBACK_MS = 30000;
+const POLL_NO_STREAM_MS = 2000;
 
 function adjustRunningTimer(tournament: Tournament): Tournament {
-  if (tournament.timerStatus !== 'running' || tournament.remainingSeconds <= 0) {
+  if (tournament.timerStatus !== 'running') {
     return tournament;
   }
-
-  const elapsed = Math.floor((Date.now() - tournament.updatedAt) / 1000);
-  if (elapsed <= 0) {
-    return tournament;
-  }
-
+  const remaining = getComputedRemainingSeconds(tournament);
   return {
     ...tournament,
-    remainingSeconds: Math.max(0, tournament.remainingSeconds - elapsed),
+    remainingSeconds: remaining,
+    updatedAt: Date.now(),
+    timerStatus: remaining > 0 ? 'running' : 'paused',
   };
 }
 
@@ -44,6 +41,24 @@ function roomReducer(
   return tournamentReducer(state, action);
 }
 
+function shouldApplyRemoteState(current: Tournament | null, remote: Tournament): boolean {
+  if (!current) {
+    return true;
+  }
+  if (remote.updatedAt > current.updatedAt) {
+    return true;
+  }
+  if (remote.updatedAt === current.updatedAt) {
+    return (
+      remote.timerStatus !== current.timerStatus ||
+      remote.currentLevelIndex !== current.currentLevelIndex ||
+      remote.remainingSeconds !== current.remainingSeconds ||
+      remote.players.length !== current.players.length
+    );
+  }
+  return false;
+}
+
 export function useTournamentRoom(roomCode: string, options?: { readOnly?: boolean }) {
   const readOnly = options?.readOnly ?? false;
   const [tournament, dispatch] = useReducer(roomReducer, null);
@@ -51,27 +66,26 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
   const [cloudSynced, setCloudSynced] = useState<boolean | null>(null);
   const tournamentRef = useRef<Tournament | null>(null);
   const pushedOnMountRef = useRef(false);
-  const lastActionRef = useRef<TournamentAction['type'] | null>(null);
 
   useEffect(() => {
     tournamentRef.current = tournament;
   }, [tournament]);
+
+  const applyRemote = useCallback((remote: Tournament) => {
+    const adjusted = adjustRunningTimer(remote);
+    if (shouldApplyRemoteState(tournamentRef.current, adjusted)) {
+      dispatch({ type: 'LOAD', tournament: adjusted });
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     const loaded = await loadTournament(roomCode.toUpperCase(), { quick: true });
     if (!loaded) {
       return null;
     }
-    const adjusted = adjustRunningTimer(loaded);
-    if (
-      !tournamentRef.current ||
-      adjusted.updatedAt > tournamentRef.current.updatedAt ||
-      adjusted.remainingSeconds !== tournamentRef.current.remainingSeconds
-    ) {
-      dispatch({ type: 'LOAD', tournament: adjusted });
-    }
-    return adjusted;
-  }, [roomCode]);
+    applyRemote(loaded);
+    return loaded;
+  }, [roomCode, applyRemote]);
 
   useEffect(() => {
     let active = true;
@@ -92,72 +106,33 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
   }, [roomCode]);
 
   useEffect(() => {
-    return subscribeToTournament(roomCode.toUpperCase(), (remote) => {
-      const adjusted = adjustRunningTimer(remote);
-      if (
-        !tournamentRef.current ||
-        adjusted.updatedAt > tournamentRef.current.updatedAt ||
-        Math.abs(adjusted.remainingSeconds - tournamentRef.current.remainingSeconds) > 1
-      ) {
-        dispatch({ type: 'LOAD', tournament: adjusted });
-      }
-    });
-  }, [roomCode]);
+    return subscribeToTournament(roomCode.toUpperCase(), applyRemote);
+  }, [roomCode, applyRemote]);
 
   useEffect(() => {
-    let active = true;
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    const setup = async () => {
-      const syncEnabled = await isAnySyncEnabled();
-      if (!active || !syncEnabled) {
-        return;
-      }
-
-      const shouldPoll = readOnly || !tournament;
-      if (!shouldPoll) {
-        return;
-      }
-
-      const localSync = await isLocalSyncEnabled();
-      const running = tournament?.timerStatus === 'running';
-      const intervalMs = localSync
-        ? readOnly && running
-          ? POLL_LOCAL_RUNNING_MS
-          : POLL_LOCAL_IDLE_MS
-        : readOnly && running
-          ? POLL_CLOUD_RUNNING_MS
-          : POLL_CLOUD_IDLE_MS;
-
-      interval = setInterval(() => {
-        void refresh();
-      }, intervalMs);
-    };
-
-    void setup();
-
-    return () => {
-      active = false;
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [readOnly, tournament, refresh]);
+    if (!isRemoteSyncEnabled()) {
+      return;
+    }
+    return subscribeToTournamentStream(roomCode.toUpperCase(), applyRemote);
+  }, [roomCode, applyRemote]);
 
   useEffect(() => {
-    if (!tournament || tournament.timerStatus !== 'running') {
+    if (!isRemoteSyncEnabled()) {
       return;
     }
 
+    const shouldPoll = readOnly || !tournament;
+    if (!shouldPoll) {
+      return;
+    }
+
+    const intervalMs = isLiveStreamSupported() ? POLL_STREAM_FALLBACK_MS : POLL_NO_STREAM_MS;
     const interval = setInterval(() => {
-      if (!readOnly) {
-        lastActionRef.current = 'TICK';
-      }
-      dispatch({ type: 'TICK' });
-    }, 1000);
+      void refresh();
+    }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [readOnly, tournament?.timerStatus, tournament?.roomCode]);
+  }, [readOnly, tournament, refresh]);
 
   useEffect(() => {
     if (readOnly || !tournament || pushedOnMountRef.current) {
@@ -171,10 +146,7 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
     if (readOnly || !tournament) {
       return;
     }
-
-    const immediate = lastActionRef.current !== 'TICK';
-    lastActionRef.current = null;
-    void saveTournament(tournament, { immediate }).then(setCloudSynced);
+    void saveTournament(tournament, { immediate: true }).then(setCloudSynced);
   }, [readOnly, tournament]);
 
   const syncToCloud = useCallback(async () => {
@@ -191,7 +163,6 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
       if (readOnly) {
         return;
       }
-      lastActionRef.current = action.type;
       dispatch(action);
     },
     [readOnly]

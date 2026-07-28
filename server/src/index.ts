@@ -1,8 +1,30 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { streamSSE } from 'hono/streaming';
 
 import { getTournament, initStore, saveTournament } from './store.js';
+
+type StreamWriter = (data: string) => void;
+
+const roomStreams = new Map<string, Set<StreamWriter>>();
+
+function addStream(roomCode: string, write: StreamWriter): void {
+  const code = roomCode.toUpperCase();
+  if (!roomStreams.has(code)) {
+    roomStreams.set(code, new Set());
+  }
+  roomStreams.get(code)?.add(write);
+}
+
+function removeStream(roomCode: string, write: StreamWriter): void {
+  roomStreams.get(roomCode.toUpperCase())?.delete(write);
+}
+
+function broadcastTournament(roomCode: string, payload: unknown): void {
+  const data = JSON.stringify(payload);
+  roomStreams.get(roomCode.toUpperCase())?.forEach((write) => write(data));
+}
 
 const app = new Hono();
 
@@ -15,6 +37,35 @@ app.use(
 );
 
 app.get('/health', (c) => c.json({ ok: true, service: 'poker-asso-sync' }));
+
+app.get('/api/tournaments/:roomCode/stream', (c) => {
+  const roomCode = c.req.param('roomCode').toUpperCase();
+
+  return streamSSE(c, async (stream) => {
+    const write: StreamWriter = (data) => {
+      void stream.writeSSE({ data });
+    };
+
+    addStream(roomCode, write);
+
+    const initial = getTournament(roomCode);
+    if (initial) {
+      await stream.writeSSE({ data: JSON.stringify(initial) });
+    }
+
+    const heartbeat = setInterval(() => {
+      void stream.writeSSE({ event: 'ping', data: '' });
+    }, 25000);
+
+    await new Promise<void>((resolve) => {
+      stream.onAbort(() => {
+        clearInterval(heartbeat);
+        removeStream(roomCode, write);
+        resolve();
+      });
+    });
+  });
+});
 
 app.get('/api/tournaments/:roomCode', (c) => {
   const roomCode = c.req.param('roomCode').toUpperCase();
@@ -44,6 +95,7 @@ app.put('/api/tournaments/:roomCode', async (c) => {
   }
 
   const saved = saveTournament(body as Parameters<typeof saveTournament>[0]);
+  broadcastTournament(roomCode, saved);
   return c.json(saved);
 });
 
@@ -59,8 +111,5 @@ serve(
   },
   (info) => {
     console.log(`Poker Asso sync server listening on http://0.0.0.0:${info.port}`);
-    console.log(`  Local:  http://localhost:${info.port}`);
-    console.log(`  WiFi:   http://VOTRE-IP-LOCALE:${info.port}`);
-    console.log(`  (ipconfig → adresse IPv4, ex. 192.168.1.42)`);
   }
 );

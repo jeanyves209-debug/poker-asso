@@ -1,10 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { pokerTheme } from '@/constants/theme';
 import { isRemoteSyncEnabled } from '@/lib/config';
-import { setDisplaySyncOverride } from '@/lib/sync-url';
+import { useLiveRemainingSeconds } from '@/lib/use-live-timer';
 import { useFullscreen } from '@/lib/use-fullscreen';
 import { getControlUrl } from '@/lib/tournament-sync';
 import { useTournamentRoom } from '@/lib/use-tournament-room';
@@ -29,18 +29,12 @@ import {
 } from '@/lib/tournament-utils';
 
 export default function DisplayScreen() {
-  const { roomId, sync } = useLocalSearchParams<{ roomId: string; sync?: string | string[] }>();
+  const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const roomCode = (roomId ?? '').toUpperCase();
   const { tournament, isLoading } = useTournamentRoom(roomCode, { readOnly: true });
+  const liveRemainingSeconds = useLiveRemainingSeconds(tournament);
   const { width, height } = useWindowDimensions();
   const { isFullscreen, toggle, supported } = useFullscreen();
-
-  useEffect(() => {
-    const raw = Array.isArray(sync) ? sync[0] : sync;
-    if (raw) {
-      setDisplaySyncOverride(decodeURIComponent(raw));
-    }
-  }, [sync]);
 
   const isLandscape = width > height;
   const fitScale = Math.min(width / 1000, height / (isLandscape ? 560 : 820), 1.35);
@@ -98,7 +92,7 @@ export default function DisplayScreen() {
           <Text style={styles.waitingTitle}>En attente du tournoi</Text>
           <Text style={styles.waitingCode}>Salle {roomCode || '——'}</Text>
           <Text style={styles.waitingText}>
-            {isRemoteSyncEnabled() || sync
+            {isRemoteSyncEnabled()
               ? `Le tournoi n’est pas encore synchronisé. Sur le téléphone, ouvrez le contrôle :\n${getControlUrl(roomCode)}`
               : `Ouvrez le contrôle sur le même navigateur :\n${getControlUrl(roomCode)}`}
           </Text>
@@ -107,7 +101,7 @@ export default function DisplayScreen() {
     );
   }
 
-  const isLowTime = tournament.remainingSeconds <= 60;
+  const isLowTime = liveRemainingSeconds <= 60;
   const durationLabel = formatLevelDurationLabel(currentLevel);
   const currentBlindNumber = getBlindLevelDisplayNumber(
     tournament.levels,
@@ -201,7 +195,7 @@ export default function DisplayScreen() {
                 isLowTime && styles.timerWarning,
               ]}
             >
-              {formatTime(tournament.remainingSeconds)}
+              {formatTime(liveRemainingSeconds)}
             </Text>
 
             <View
