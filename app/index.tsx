@@ -14,12 +14,12 @@ import {
 import { ActionButton, ScreenContainer, SectionTitle } from '@/components/ui';
 import { pokerTheme } from '@/constants/theme';
 import { isRemoteSyncEnabled } from '@/lib/config';
+import { checkRemoteSyncHealth } from '@/lib/remote-sync';
 import {
   loadLastActiveRoomCode,
   loadRecentTournaments,
   loadTournament,
 } from '@/lib/tournament-sync';
-import { checkRemoteSyncHealth } from '@/lib/remote-sync';
 import { useTournament } from '@/lib/tournament-store';
 import { SavedTournamentSummary } from '@/types/saved-tournament';
 
@@ -75,32 +75,39 @@ export default function HomeScreen() {
     }, [refreshSaved])
   );
 
-  const openTournament = async (code: string) => {
+  const openTournament = async (code: string, options?: { joinRemote?: boolean }) => {
+    const normalized = code.trim().toUpperCase();
+    if (normalized.length < 4) {
+      setError('Entrez un code de salle valide.');
+      return;
+    }
+
     setLoading(true);
     setError('');
     try {
-      const tournament = await loadRoom(code.toUpperCase());
+      if (isRemoteSyncEnabled() && options?.joinRemote) {
+        void loadRoom(normalized);
+        router.push(`/control/${normalized}`);
+        return;
+      }
+
+      const tournament = await loadRoom(normalized);
       if (!tournament) {
         setError(
           isRemoteSyncEnabled()
-            ? 'Tournoi introuvable. Vérifiez le code ou votre connexion internet.'
+            ? 'Tournoi introuvable. Vérifiez le code ou demandez à l’organisateur de synchroniser.'
             : 'Tournoi introuvable sur cet appareil.'
         );
         return;
       }
-      router.push(`/control/${code.toUpperCase()}`);
+      router.push(`/control/${normalized}`);
     } finally {
       setLoading(false);
     }
   };
 
   const handleJoin = async () => {
-    const code = roomCode.trim().toUpperCase();
-    if (code.length < 4) {
-      setError('Entrez un code de salle valide.');
-      return;
-    }
-    await openTournament(code);
+    await openTournament(roomCode, { joinRemote: isRemoteSyncEnabled() });
   };
 
   return (
@@ -190,6 +197,11 @@ export default function HomeScreen() {
 
           <View style={styles.card}>
             <SectionTitle>Rejoindre une salle</SectionTitle>
+            <Text style={styles.hintInline}>
+              {isRemoteSyncEnabled()
+                ? 'Entrez le code affiché sur le téléphone de l’organisateur. La connexion peut prendre jusqu’à 30 s.'
+                : 'Le tournoi doit déjà exister sur cet appareil.'}
+            </Text>
             <Text style={styles.label}>Code salle</Text>
             <TextInput
               value={roomCode}

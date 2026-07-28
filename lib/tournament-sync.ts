@@ -1,7 +1,11 @@
 import { Platform, Share } from 'react-native';
 
 import { getAppUrl, isRemoteSyncEnabled } from '@/lib/config';
-import { fetchRemoteTournament, saveRemoteTournament } from '@/lib/remote-sync';
+import {
+  fetchRemoteTournament,
+  fetchRemoteTournamentQuick,
+  saveRemoteTournament,
+} from '@/lib/remote-sync';
 import { storageGetItem, storageSetItem } from '@/lib/storage';
 import { buildTournamentSummary, normalizeTournament } from '@/lib/tournament-utils';
 import { SavedTournamentSummary } from '@/types/saved-tournament';
@@ -10,11 +14,14 @@ import { Tournament } from '@/types/tournament';
 const RECENT_KEY = 'poker-asso:recent-v1';
 const LAST_ACTIVE_KEY = 'poker-asso:last-active';
 const MAX_RECENT = 12;
-const REMOTE_POLL_MS = 1500;
+const CLOUD_SAVE_DEBOUNCE_MS = 4000;
 
 function storageKey(roomCode: string) {
   return `poker-asso:${roomCode}`;
 }
+
+let cloudSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+let pendingCloudTournament: Tournament | null = null;
 
 async function readLocalTournament(roomCode: string): Promise<Tournament | null> {
   const payload = await storageGetItem(storageKey(roomCode.toUpperCase()));
@@ -43,14 +50,53 @@ function pickLatestTournament(
   return remote ?? local;
 }
 
-export async function saveTournament(tournament: Tournament): Promise<boolean> {
+function flushScheduledCloudSave(): Promise<void> {
+  if (cloudSaveTimeout) {
+    clearTimeout(cloudSaveTimeout);
+    cloudSaveTimeout = null;
+  }
+  const tournament = pendingCloudTournament;
+  pendingCloudTournament = null;
+  if (!tournament) {
+    return Promise.resolve();
+  }
+  return saveRemoteTournament(tournament).then(() => undefined);
+}
+
+function scheduleCloudSave(tournament: Tournament): void {
+  if (!isRemoteSyncEnabled()) {
+    return;
+  }
+  pendingCloudTournament = tournament;
+  if (cloudSaveTimeout) {
+    return;
+  }
+  cloudSaveTimeout = setTimeout(() => {
+    cloudSaveTimeout = null;
+    const payload = pendingCloudTournament;
+    pendingCloudTournament = null;
+    if (payload) {
+      void saveRemoteTournament(payload);
+    }
+  }, CLOUD_SAVE_DEBOUNCE_MS);
+}
+
+export async function saveTournament(
+  tournament: Tournament,
+  options?: { immediate?: boolean }
+): Promise<boolean> {
   await writeLocalTournament(tournament);
   await storageSetItem(LAST_ACTIVE_KEY, tournament.roomCode);
   await updateRecentIndex(tournament);
 
   let cloudSaved = true;
   if (isRemoteSyncEnabled()) {
-    cloudSaved = await saveRemoteTournament(tournament);
+    if (options?.immediate) {
+      await flushScheduledCloudSave();
+      cloudSaved = await saveRemoteTournament(tournament);
+    } else {
+      scheduleCloudSave(tournament);
+    }
   }
 
   publishTournament(tournament);
@@ -61,11 +107,9 @@ export async function pushTournamentToCloud(tournament: Tournament): Promise<boo
   if (!isRemoteSyncEnabled()) {
     return false;
   }
-  const cloudSaved = await saveRemoteTournament(tournament);
-  if (cloudSaved) {
-    await writeLocalTournament(tournament);
-  }
-  return cloudSaved;
+  await writeLocalTournament(tournament);
+  await flushScheduledCloudSave();
+  return saveRemoteTournament(tournament);
 }
 
 async function updateRecentIndex(tournament: Tournament): Promise<void> {
@@ -86,12 +130,18 @@ async function updateRecentIndex(tournament: Tournament): Promise<void> {
   await storageSetItem(RECENT_KEY, JSON.stringify(next));
 }
 
-export async function loadTournament(roomCode: string): Promise<Tournament | null> {
+export async function loadTournament(
+  roomCode: string,
+  options?: { quick?: boolean }
+): Promise<Tournament | null> {
   const code = roomCode.toUpperCase();
-  const [remote, local] = await Promise.all([
-    isRemoteSyncEnabled() ? fetchRemoteTournament(code) : Promise.resolve(null),
-    readLocalTournament(code),
-  ]);
+  const remotePromise = isRemoteSyncEnabled()
+    ? options?.quick
+      ? fetchRemoteTournamentQuick(code)
+      : fetchRemoteTournament(code)
+    : Promise.resolve(null);
+
+  const [remote, local] = await Promise.all([remotePromise, readLocalTournament(code)]);
 
   const tournament = pickLatestTournament(remote, local);
   if (tournament) {
@@ -126,7 +176,6 @@ type SyncListener = (tournament: Tournament) => void;
 
 const listeners = new Map<string, Set<SyncListener>>();
 const channels = new Map<string, BroadcastChannel>();
-const remotePollers = new Map<string, ReturnType<typeof setInterval>>();
 
 function getChannel(roomCode: string): BroadcastChannel | null {
   if (Platform.OS !== 'web' || typeof BroadcastChannel === 'undefined') {
@@ -148,36 +197,6 @@ function getChannel(roomCode: string): BroadcastChannel | null {
   return channels.get(roomCode) ?? null;
 }
 
-function startRemotePolling(roomCode: string): void {
-  if (!isRemoteSyncEnabled() || remotePollers.has(roomCode)) {
-    return;
-  }
-
-  const poll = async () => {
-    const remote = await fetchRemoteTournament(roomCode);
-    if (!remote) {
-      return;
-    }
-    listeners.get(roomCode)?.forEach((listener) => listener(remote));
-  };
-
-  void poll();
-  remotePollers.set(
-    roomCode,
-    setInterval(() => {
-      void poll();
-    }, REMOTE_POLL_MS)
-  );
-}
-
-function stopRemotePolling(roomCode: string): void {
-  const interval = remotePollers.get(roomCode);
-  if (interval) {
-    clearInterval(interval);
-    remotePollers.delete(roomCode);
-  }
-}
-
 export function publishTournament(tournament: Tournament): void {
   const channel = getChannel(tournament.roomCode);
   channel?.postMessage({ type: 'STATE_UPDATE', payload: tournament } satisfies SyncMessage);
@@ -189,7 +208,6 @@ export function subscribeToTournament(
 ): () => void {
   const code = roomCode.toUpperCase();
   getChannel(code);
-  startRemotePolling(code);
 
   if (!listeners.has(code)) {
     listeners.set(code, new Set());
@@ -201,7 +219,6 @@ export function subscribeToTournament(
     listeners.get(code)?.delete(listener);
     if ((listeners.get(code)?.size ?? 0) === 0) {
       listeners.delete(code);
-      stopRemotePolling(code);
     }
   };
 }

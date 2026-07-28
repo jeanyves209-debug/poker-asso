@@ -50,14 +50,15 @@ type TabKey = 'timer' | 'players' | 'levels' | 'settings';
 export default function ControlScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const roomCode = (roomId ?? '').toUpperCase();
-  const { tournament, dispatch, isLoading, cloudSynced, syncToCloud } = useTournamentRoom(roomCode);
+  const { tournament, dispatch, isLoading, cloudSynced, syncToCloud, refresh } =
+    useTournamentRoom(roomCode);
   const [tab, setTab] = useState<TabKey>('timer');
   const [playerName, setPlayerName] = useState('');
   const [copied, setCopied] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !tournament && roomCode) {
+    if (!isLoading && !tournament && roomCode && !isRemoteSyncEnabled()) {
       router.replace('/');
     }
   }, [isLoading, tournament, roomCode]);
@@ -82,7 +83,36 @@ export default function ControlScreen() {
     };
   }, [tournament]);
 
-  if (isLoading || !tournament || !currentLevel || !stats) {
+  if (isLoading) {
+    return (
+      <ScreenContainer>
+        <View style={styles.centered}>
+          <Text style={styles.loadingText}>Connexion à la salle {roomCode}…</Text>
+        </View>
+      </ScreenContainer>
+    );
+  }
+
+  if (!tournament) {
+    return (
+      <ScreenContainer>
+        <View style={styles.centered}>
+          <Text style={styles.loadingText}>Salle {roomCode}</Text>
+          <Text style={styles.waitingHint}>
+            {isRemoteSyncEnabled()
+              ? 'En attente du tournoi sur le serveur. L’organisateur doit ouvrir le contrôle et synchroniser (bandeau vert). Cela peut prendre 30 s.'
+              : 'Tournoi introuvable sur cet appareil.'}
+          </Text>
+          {isRemoteSyncEnabled() ? (
+            <ActionButton label="Réessayer" onPress={() => void refresh()} variant="secondary" />
+          ) : null}
+          <ActionButton label="Retour accueil" onPress={() => router.replace('/')} variant="secondary" />
+        </View>
+      </ScreenContainer>
+    );
+  }
+
+  if (!currentLevel || !stats) {
     return (
       <ScreenContainer>
         <View style={styles.centered}>
@@ -611,9 +641,21 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 24,
+    gap: 16,
   },
   loadingText: {
     color: pokerTheme.textMuted,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  waitingHint: {
+    color: pokerTheme.textMuted,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+    maxWidth: 320,
   },
   header: {
     flexDirection: 'row',

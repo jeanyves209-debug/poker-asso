@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
+import { isRemoteSyncEnabled } from '@/lib/config';
 import {
   loadTournament,
   pushTournamentToCloud,
@@ -8,6 +9,8 @@ import {
 } from '@/lib/tournament-sync';
 import { tournamentReducer } from '@/lib/tournament-utils';
 import { Tournament, TournamentAction } from '@/types/tournament';
+
+const REMOTE_POLL_MS = 4000;
 
 function roomReducer(
   state: Tournament | null,
@@ -35,7 +38,7 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
   }, [tournament]);
 
   const refresh = useCallback(async () => {
-    const loaded = await loadTournament(roomCode.toUpperCase());
+    const loaded = await loadTournament(roomCode.toUpperCase(), { quick: true });
     if (!loaded) {
       return null;
     }
@@ -49,7 +52,10 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
     let active = true;
     const run = async () => {
       setIsLoading(true);
-      await refresh();
+      const loaded = await loadTournament(roomCode.toUpperCase(), { quick: false });
+      if (loaded && active) {
+        dispatch({ type: 'LOAD', tournament: loaded });
+      }
       if (active) {
         setIsLoading(false);
       }
@@ -58,7 +64,7 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
     return () => {
       active = false;
     };
-  }, [refresh]);
+  }, [roomCode]);
 
   useEffect(() => {
     return subscribeToTournament(roomCode.toUpperCase(), (remote) => {
@@ -69,14 +75,18 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
   }, [roomCode]);
 
   useEffect(() => {
-    if (!readOnly) {
+    if (!isRemoteSyncEnabled()) {
+      return;
+    }
+    const shouldPoll = readOnly || !tournament;
+    if (!shouldPoll) {
       return;
     }
     const interval = setInterval(() => {
       void refresh();
-    }, 2000);
+    }, REMOTE_POLL_MS);
     return () => clearInterval(interval);
-  }, [readOnly, refresh]);
+  }, [readOnly, tournament, refresh]);
 
   useEffect(() => {
     if (readOnly || !tournament || tournament.timerStatus !== 'running') {
