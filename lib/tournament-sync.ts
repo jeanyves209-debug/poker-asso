@@ -43,16 +43,29 @@ function pickLatestTournament(
   return remote ?? local;
 }
 
-export async function saveTournament(tournament: Tournament): Promise<void> {
+export async function saveTournament(tournament: Tournament): Promise<boolean> {
   await writeLocalTournament(tournament);
   await storageSetItem(LAST_ACTIVE_KEY, tournament.roomCode);
   await updateRecentIndex(tournament);
 
+  let cloudSaved = true;
   if (isRemoteSyncEnabled()) {
-    await saveRemoteTournament(tournament);
+    cloudSaved = await saveRemoteTournament(tournament);
   }
 
   publishTournament(tournament);
+  return cloudSaved;
+}
+
+export async function pushTournamentToCloud(tournament: Tournament): Promise<boolean> {
+  if (!isRemoteSyncEnabled()) {
+    return false;
+  }
+  const cloudSaved = await saveRemoteTournament(tournament);
+  if (cloudSaved) {
+    await writeLocalTournament(tournament);
+  }
+  return cloudSaved;
 }
 
 async function updateRecentIndex(tournament: Tournament): Promise<void> {

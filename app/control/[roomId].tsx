@@ -16,6 +16,7 @@ import { PayoutSetupForm } from '@/components/PayoutSetupForm';
 import { ActionButton, ScreenContainer, SectionTitle, StatCard } from '@/components/ui';
 import { pokerTheme } from '@/constants/theme';
 import { copyToClipboard, getDisplayUrl } from '@/lib/tournament-sync';
+import { isRemoteSyncEnabled } from '@/lib/config';
 import { useTournamentRoom } from '@/lib/use-tournament-room';
 import {
   canAddAddOn,
@@ -49,10 +50,11 @@ type TabKey = 'timer' | 'players' | 'levels' | 'settings';
 export default function ControlScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const roomCode = (roomId ?? '').toUpperCase();
-  const { tournament, dispatch, isLoading } = useTournamentRoom(roomCode);
+  const { tournament, dispatch, isLoading, cloudSynced, syncToCloud } = useTournamentRoom(roomCode);
   const [tab, setTab] = useState<TabKey>('timer');
   const [playerName, setPlayerName] = useState('');
   const [copied, setCopied] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !tournament && roomCode) {
@@ -193,6 +195,47 @@ export default function ControlScreen() {
             variant="secondary"
           />
         </View>
+
+        {isRemoteSyncEnabled() ? (
+          <View
+            style={[
+              styles.syncCard,
+              cloudSynced === false && styles.syncCardError,
+              cloudSynced === true && styles.syncCardOk,
+            ]}
+          >
+            <Text style={styles.syncCardTitle}>
+              {cloudSynced === null || syncing
+                ? 'Synchronisation en cours…'
+                : cloudSynced
+                  ? 'Écran TV connecté au cloud'
+                  : 'Échec sync cloud — l’écran TV ne voit pas le tournoi'}
+            </Text>
+            <Text style={styles.syncCardHint}>
+              {cloudSynced === false
+                ? 'Le serveur Render peut mettre 30 s à démarrer. Appuyez sur « Forcer la sync » puis rouvrez l’écran TV.'
+                : 'Ouvrez le lien d’affichage sur la TV uniquement après ce message vert.'}
+            </Text>
+            {cloudSynced === false ? (
+              <ActionButton
+                label={syncing ? 'Sync…' : 'Forcer la sync'}
+                disabled={syncing}
+                onPress={async () => {
+                  setSyncing(true);
+                  const ok = await syncToCloud();
+                  setSyncing(false);
+                  if (!ok) {
+                    Alert.alert(
+                      'Sync échouée',
+                      'Impossible d’envoyer le tournoi au serveur. Attendez 30 s et réessayez.'
+                    );
+                  }
+                }}
+                variant="secondary"
+              />
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.statsRow}>
           <StatCard label="Restants" value={`${stats.active}/${stats.total}`} />
@@ -616,6 +659,31 @@ const styles = StyleSheet.create({
   displayUrl: {
     color: pokerTheme.accent,
     fontSize: 14,
+  },
+  syncCard: {
+    backgroundColor: pokerTheme.surface,
+    borderRadius: 16,
+    padding: 16,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: pokerTheme.border,
+  },
+  syncCardOk: {
+    borderColor: pokerTheme.gold,
+    backgroundColor: pokerTheme.surfaceAlt,
+  },
+  syncCardError: {
+    borderColor: pokerTheme.danger,
+  },
+  syncCardTitle: {
+    color: pokerTheme.text,
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  syncCardHint: {
+    color: pokerTheme.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   statsRow: {
     flexDirection: 'row',

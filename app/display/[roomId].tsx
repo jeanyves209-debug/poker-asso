@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-n
 
 import { pokerTheme } from '@/constants/theme';
 import { isRemoteSyncEnabled } from '@/lib/config';
+import { getControlUrl } from '@/lib/tournament-sync';
 import { useTournamentRoom } from '@/lib/use-tournament-room';
 import {
   getBlindLevelDisplayNumber,
@@ -28,7 +29,7 @@ import {
 export default function DisplayScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const roomCode = (roomId ?? '').toUpperCase();
-  const { tournament } = useTournamentRoom(roomCode, { readOnly: true });
+  const { tournament, isLoading } = useTournamentRoom(roomCode, { readOnly: true });
   const { width } = useWindowDimensions();
 
   const currentLevel = tournament?.levels[tournament.currentLevelIndex];
@@ -66,6 +67,17 @@ export default function DisplayScreen() {
 
   const scale = width > 1200 ? 1.2 : width > 800 ? 1 : 0.85;
 
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.waitingCard}>
+          <Text style={styles.waitingTitle}>Chargement…</Text>
+          <Text style={styles.waitingCode}>Salle {roomCode || '——'}</Text>
+        </View>
+      </View>
+    );
+  }
+
   if (!tournament || !currentLevel || !stats) {
     return (
       <View style={styles.container}>
@@ -73,10 +85,9 @@ export default function DisplayScreen() {
           <Text style={styles.waitingTitle}>En attente du tournoi</Text>
           <Text style={styles.waitingCode}>Salle {roomCode || '——'}</Text>
           <Text style={styles.waitingText}>
-            Ouvrez le contrôle sur le téléphone avec le code salle {roomCode || '——'}.
             {isRemoteSyncEnabled()
-              ? ' Les appareils connectés à internet se synchronisent automatiquement.'
-              : ' Sur le web, les deux onglets doivent être ouverts sur le même navigateur.'}
+              ? `Le tournoi n’est pas encore sur le serveur. Sur le téléphone, ouvrez le contrôle :\n${getControlUrl(roomCode)}\n\nAttendez le bandeau vert « Écran TV connecté au cloud », puis rafraîchissez cette page.`
+              : `Ouvrez le contrôle sur le même navigateur :\n${getControlUrl(roomCode)}`}
           </Text>
         </View>
       </View>

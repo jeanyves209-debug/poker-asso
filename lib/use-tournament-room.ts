@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import {
   loadTournament,
-  publishTournament,
+  pushTournamentToCloud,
   saveTournament,
   subscribeToTournament,
 } from '@/lib/tournament-sync';
@@ -26,7 +26,9 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
   const readOnly = options?.readOnly ?? false;
   const [tournament, dispatch] = useReducer(roomReducer, null);
   const [isLoading, setIsLoading] = useState(true);
+  const [cloudSynced, setCloudSynced] = useState<boolean | null>(null);
   const tournamentRef = useRef<Tournament | null>(null);
+  const pushedOnMountRef = useRef(false);
 
   useEffect(() => {
     tournamentRef.current = tournament;
@@ -89,12 +91,28 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
   }, [readOnly, tournament?.timerStatus, tournament?.roomCode]);
 
   useEffect(() => {
+    if (readOnly || !tournament || pushedOnMountRef.current) {
+      return;
+    }
+    pushedOnMountRef.current = true;
+    void pushTournamentToCloud(tournament).then(setCloudSynced);
+  }, [readOnly, tournament?.roomCode]);
+
+  useEffect(() => {
     if (readOnly || !tournament) {
       return;
     }
-    void saveTournament(tournament);
-    publishTournament(tournament);
+    void saveTournament(tournament).then(setCloudSynced);
   }, [readOnly, tournament]);
+
+  const syncToCloud = useCallback(async () => {
+    if (readOnly || !tournamentRef.current) {
+      return false;
+    }
+    const ok = await pushTournamentToCloud(tournamentRef.current);
+    setCloudSynced(ok);
+    return ok;
+  }, [readOnly]);
 
   const send = useCallback(
     (action: TournamentAction) => {
@@ -106,5 +124,5 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
     [readOnly]
   );
 
-  return { tournament, dispatch: send, refresh, isLoading };
+  return { tournament, dispatch: send, refresh, isLoading, cloudSynced, syncToCloud };
 }
