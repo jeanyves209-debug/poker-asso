@@ -33,7 +33,11 @@
     "web": "expo start --web",
     "sync-server": "npm run start --prefix server",
     "sync-server:dev": "npm run dev --prefix server",
-    "export:web": "expo export -p web"
+    "export:web": "expo export -p web",
+    "vercel-build": "expo export -p web"
+  },
+  "engines": {
+    "node": "20.x"
   },
   "private": true
 }

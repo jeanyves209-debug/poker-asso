@@ -60,11 +60,17 @@ git push -u origin main
 
 1. Allez sur [vercel.com/new](https://vercel.com/new)
 2. Importez le repo GitHub `poker-asso`
-3. **Framework Preset** : Other
-4. Paramètres de build (normalement détectés via `vercel.json`) :
-  - Build Command : `npm run export:web`
-  - Output Directory : `dist`
-5. **Environment Variables** — ajoutez **avant** le premier déploiement :
+3. **Framework Preset** : **Other** (pas Next.js, pas Expo auto-detect)
+4. **Root Directory** : laissez **vide** (pas `server/`)
+5. Paramètres de build — vérifiez **exactement** :
+
+   | Champ | Valeur |
+   |-------|--------|
+   | Build Command | `npx expo export -p web` |
+   | Output Directory | `dist` |
+   | Install Command | `npm install` |
+
+6. **Environment Variables** — ajoutez **avant** le premier déploiement :
 
   | Variable               | Valeur                                                             |
   | ---------------------- | ------------------------------------------------------------------ |
@@ -116,13 +122,27 @@ Puis configurez les variables dans le dashboard Vercel et redeployez.
 
 | Problème                                  | Solution                                                |
 | ----------------------------------------- | ------------------------------------------------------- |
-| Page 404 sur `/display/CODE`              | Mode SPA activé (`web.output: "single"`) + redeploy     |
+| **404 sur toute l’app** (même `/`)        | Build Vercel échoué ou Output Directory ≠ `dist`. Voir ci-dessous |
+| Page 404 sur `/display/CODE`              | Redeploy après fix `vercel.json` + `_redirects`         |
 | « Serveur de sync injoignable »           | Render endormi → attendez 30 s et rafraîchissez         |
 | Tournoi introuvable sur un autre appareil | Vérifiez `EXPO_PUBLIC_SYNC_URL` sur Vercel + **Redeploy** |
 | Lien d’affichage incorrect sur mobile     | Vérifiez `EXPO_PUBLIC_APP_URL` + **Redeploy**           |
 | Build Vercel échoue                       | Lancez `npm run export:web` en local pour voir l’erreur |
 
 > Après toute modification de `EXPO_PUBLIC_*` sur Vercel : **Deployments → ⋯ → Redeploy**
+
+### Si https://poker-asso.vercel.app affiche 404 partout
+
+1. Vercel → votre projet → **Deployments** → ouvrez le dernier deploy
+2. Si **Build Failed** (rouge) : cliquez pour voir l’erreur, corrigez, redeploy
+3. Si **Ready** (vert) mais 404 quand même :
+   - **Settings → General → Root Directory** → doit être **vide**
+   - **Settings → Build & Development** :
+     - Output Directory = `dist`
+     - Build Command = `npx expo export -p web`
+   - **Deployments → Redeploy** (cochez « Use existing Build Cache » = **Non**)
+4. Test : `https://poker-asso.vercel.app/` doit afficher l’accueil Poker Asso
+5. Puis : `https://poker-asso.vercel.app/display/F56JNY` doit afficher « En attente du tournoi » (pas 404)
 
 
 ---

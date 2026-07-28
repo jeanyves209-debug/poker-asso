@@ -1,10 +1,12 @@
 {
-  "buildCommand": "npm run export:web",
+  "buildCommand": "npx expo export -p web",
   "outputDirectory": "dist",
+  "installCommand": "npm install",
+  "devCommand": "expo start --web",
   "framework": null,
   "rewrites": [
     {
-      "source": "/((?!_expo/|favicon.ico|assets/).*)",
+      "source": "/((?!_expo/).*)",
       "destination": "/index.html"
     }
   ]
