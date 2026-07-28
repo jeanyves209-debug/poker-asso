@@ -10,14 +10,31 @@ import {
 import { tournamentReducer } from '@/lib/tournament-utils';
 import { Tournament, TournamentAction } from '@/types/tournament';
 
-const REMOTE_POLL_MS = 4000;
+const POLL_RUNNING_MS = 2000;
+const POLL_IDLE_MS = 5000;
+
+function adjustRunningTimer(tournament: Tournament): Tournament {
+  if (tournament.timerStatus !== 'running' || tournament.remainingSeconds <= 0) {
+    return tournament;
+  }
+
+  const elapsed = Math.floor((Date.now() - tournament.updatedAt) / 1000);
+  if (elapsed <= 0) {
+    return tournament;
+  }
+
+  return {
+    ...tournament,
+    remainingSeconds: Math.max(0, tournament.remainingSeconds - elapsed),
+  };
+}
 
 function roomReducer(
   state: Tournament | null,
   action: TournamentAction
 ): Tournament | null {
   if (action.type === 'LOAD') {
-    return action.tournament;
+    return adjustRunningTimer(action.tournament);
   }
   if (!state) {
     return state;
@@ -32,6 +49,7 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
   const [cloudSynced, setCloudSynced] = useState<boolean | null>(null);
   const tournamentRef = useRef<Tournament | null>(null);
   const pushedOnMountRef = useRef(false);
+  const lastActionRef = useRef<TournamentAction['type'] | null>(null);
 
   useEffect(() => {
     tournamentRef.current = tournament;
@@ -42,10 +60,15 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
     if (!loaded) {
       return null;
     }
-    if (!tournamentRef.current || loaded.updatedAt > tournamentRef.current.updatedAt) {
-      dispatch({ type: 'LOAD', tournament: loaded });
+    const adjusted = adjustRunningTimer(loaded);
+    if (
+      !tournamentRef.current ||
+      adjusted.updatedAt > tournamentRef.current.updatedAt ||
+      adjusted.remainingSeconds !== tournamentRef.current.remainingSeconds
+    ) {
+      dispatch({ type: 'LOAD', tournament: adjusted });
     }
-    return loaded;
+    return adjusted;
   }, [roomCode]);
 
   useEffect(() => {
@@ -68,8 +91,13 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
 
   useEffect(() => {
     return subscribeToTournament(roomCode.toUpperCase(), (remote) => {
-      if (!tournamentRef.current || remote.updatedAt > tournamentRef.current.updatedAt) {
-        dispatch({ type: 'LOAD', tournament: remote });
+      const adjusted = adjustRunningTimer(remote);
+      if (
+        !tournamentRef.current ||
+        adjusted.updatedAt > tournamentRef.current.updatedAt ||
+        Math.abs(adjusted.remainingSeconds - tournamentRef.current.remainingSeconds) > 1
+      ) {
+        dispatch({ type: 'LOAD', tournament: adjusted });
       }
     });
   }, [roomCode]);
@@ -82,18 +110,23 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
     if (!shouldPoll) {
       return;
     }
+    const intervalMs =
+      readOnly && tournament?.timerStatus === 'running' ? POLL_RUNNING_MS : POLL_IDLE_MS;
     const interval = setInterval(() => {
       void refresh();
-    }, REMOTE_POLL_MS);
+    }, intervalMs);
     return () => clearInterval(interval);
   }, [readOnly, tournament, refresh]);
 
   useEffect(() => {
-    if (readOnly || !tournament || tournament.timerStatus !== 'running') {
+    if (!tournament || tournament.timerStatus !== 'running') {
       return;
     }
 
     const interval = setInterval(() => {
+      if (!readOnly) {
+        lastActionRef.current = 'TICK';
+      }
       dispatch({ type: 'TICK' });
     }, 1000);
 
@@ -112,7 +145,10 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
     if (readOnly || !tournament) {
       return;
     }
-    void saveTournament(tournament).then(setCloudSynced);
+
+    const immediate = lastActionRef.current !== 'TICK';
+    lastActionRef.current = null;
+    void saveTournament(tournament, { immediate }).then(setCloudSynced);
   }, [readOnly, tournament]);
 
   const syncToCloud = useCallback(async () => {
@@ -129,6 +165,7 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
       if (readOnly) {
         return;
       }
+      lastActionRef.current = action.type;
       dispatch(action);
     },
     [readOnly]

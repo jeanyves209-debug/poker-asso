@@ -15,6 +15,7 @@ const RECENT_KEY = 'poker-asso:recent-v1';
 const LAST_ACTIVE_KEY = 'poker-asso:last-active';
 const MAX_RECENT = 12;
 const CLOUD_SAVE_DEBOUNCE_MS = 4000;
+const CLOUD_SAVE_DEBOUNCE_RUNNING_MS = 1500;
 
 function storageKey(roomCode: string) {
   return `poker-asso:${roomCode}`;
@@ -68,6 +69,10 @@ function scheduleCloudSave(tournament: Tournament): void {
     return;
   }
   pendingCloudTournament = tournament;
+  const delay =
+    tournament.timerStatus === 'running'
+      ? CLOUD_SAVE_DEBOUNCE_RUNNING_MS
+      : CLOUD_SAVE_DEBOUNCE_MS;
   if (cloudSaveTimeout) {
     return;
   }
@@ -78,7 +83,7 @@ function scheduleCloudSave(tournament: Tournament): void {
     if (payload) {
       void saveRemoteTournament(payload);
     }
-  }, CLOUD_SAVE_DEBOUNCE_MS);
+  }, delay);
 }
 
 export async function saveTournament(

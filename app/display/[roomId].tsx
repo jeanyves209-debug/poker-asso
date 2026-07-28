@@ -1,9 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { pokerTheme } from '@/constants/theme';
 import { isRemoteSyncEnabled } from '@/lib/config';
+import { useFullscreen } from '@/lib/use-fullscreen';
 import { getControlUrl } from '@/lib/tournament-sync';
 import { useTournamentRoom } from '@/lib/use-tournament-room';
 import {
@@ -30,7 +31,12 @@ export default function DisplayScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const roomCode = (roomId ?? '').toUpperCase();
   const { tournament, isLoading } = useTournamentRoom(roomCode, { readOnly: true });
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const { isFullscreen, toggle, supported } = useFullscreen();
+
+  const isLandscape = width > height;
+  const fitScale = Math.min(width / 1100, height / (isLandscape ? 620 : 900), 1.15);
+  const scale = Math.max(0.65, fitScale);
 
   const currentLevel = tournament?.levels[tournament.currentLevelIndex];
   const nextLevel = tournament?.levels[tournament.currentLevelIndex + 1];
@@ -65,8 +71,6 @@ export default function DisplayScreen() {
     };
   }, [tournament]);
 
-  const scale = width > 1200 ? 1.2 : width > 800 ? 1 : 0.85;
-
   if (isLoading) {
     return (
       <View style={styles.container}>
@@ -86,7 +90,7 @@ export default function DisplayScreen() {
           <Text style={styles.waitingCode}>Salle {roomCode || '——'}</Text>
           <Text style={styles.waitingText}>
             {isRemoteSyncEnabled()
-              ? `Le tournoi n’est pas encore sur le serveur. Sur le téléphone, ouvrez le contrôle :\n${getControlUrl(roomCode)}\n\nAttendez le bandeau vert « Écran TV connecté au cloud », puis rafraîchissez cette page.`
+              ? `Le tournoi n’est pas encore sur le serveur. Sur le téléphone, ouvrez le contrôle :\n${getControlUrl(roomCode)}`
               : `Ouvrez le contrôle sur le même navigateur :\n${getControlUrl(roomCode)}`}
           </Text>
         </View>
@@ -115,173 +119,180 @@ export default function DisplayScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.topBar}>
-          <Text style={styles.tournamentName}>{tournament.name}</Text>
-          <Text style={styles.roomCode}>Salle {roomCode}</Text>
-          {stats.lateRegistrationLabel ? (
-            <View
-              style={[
-                styles.lateRegBanner,
-                !stats.lateRegistrationOpen && styles.lateRegBannerClosed,
-              ]}
-            >
+      <View style={[styles.page, isLandscape ? styles.pageLandscape : styles.pagePortrait]}>
+        <View style={styles.headerRow}>
+          <View style={styles.topBar}>
+            <Text style={[styles.tournamentName, { fontSize: 18 * scale }]}>
+              {tournament.name}
+            </Text>
+            <Text style={[styles.roomCode, { fontSize: 14 * scale }]}>Salle {roomCode}</Text>
+            {stats.lateRegistrationLabel ? (
               <Text
                 style={[
-                  styles.lateRegText,
-                  !stats.lateRegistrationOpen && styles.lateRegTextClosed,
+                  styles.lateRegInline,
+                  { fontSize: 12 * scale },
+                  !stats.lateRegistrationOpen && styles.lateRegInlineClosed,
                 ]}
+                numberOfLines={1}
               >
                 {stats.lateRegistrationLabel}
               </Text>
-            </View>
+            ) : null}
+          </View>
+
+          {supported ? (
+            <Pressable onPress={toggle} style={styles.fullscreenButton}>
+              <Text style={styles.fullscreenLabel}>
+                {isFullscreen ? 'Quitter plein écran' : 'Plein écran'}
+              </Text>
+            </Pressable>
           ) : null}
         </View>
 
-        <View style={[styles.heroPanel, currentIsBreak && styles.heroPanelBreak]}>
-          {currentIsBreak ? (
-            <>
-              <Text style={[styles.blindsLabel, { fontSize: 22 * scale }]}>Pause tournoi</Text>
-              <Text style={[styles.breakHero, { fontSize: 100 * scale, lineHeight: 110 * scale }]}>
-                PAUSE
-              </Text>
-            </>
-          ) : (
-            <>
-              <Text style={[styles.blindsLabel, { fontSize: 22 * scale }]}>Blinds actuelles</Text>
-              <Text style={[styles.blinds, { fontSize: 120 * scale, lineHeight: 130 * scale }]}>
-                {formatBlinds(currentLevel.smallBlind, currentLevel.bigBlind)}
-              </Text>
-              {currentLevel.ante > 0 ? (
-                <Text style={[styles.ante, { fontSize: 32 * scale }]}>
-                  Ante {formatChips(currentLevel.ante)}
-                </Text>
-              ) : null}
-            </>
-          )}
-
-          <View style={styles.divider} />
-
-          {!currentIsBreak && currentBlindNumber ? (
-            <Text style={[styles.levelNumber, { fontSize: 28 * scale }]}>
-              NIVEAU {currentBlindNumber}
-            </Text>
-          ) : null}
-          <Text style={[styles.levelDuration, { fontSize: 36 * scale }]}>{durationLabel}</Text>
-
-          <Text
+        <View style={[styles.main, isLandscape && styles.mainLandscape]}>
+          <View
             style={[
-              styles.timer,
-              { fontSize: 140 * scale, lineHeight: 150 * scale },
-              isLowTime && styles.timerWarning,
+              styles.heroPanel,
+              isLandscape && styles.heroPanelLandscape,
+              currentIsBreak && styles.heroPanelBreak,
             ]}
           >
-            {formatTime(tournament.remainingSeconds)}
-          </Text>
+            {currentIsBreak ? (
+              <>
+                <Text style={[styles.blindsLabel, { fontSize: 18 * scale }]}>Pause tournoi</Text>
+                <Text style={[styles.breakHero, { fontSize: 72 * scale, lineHeight: 80 * scale }]}>
+                  PAUSE
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.blindsLabel, { fontSize: 18 * scale }]}>Blinds actuelles</Text>
+                <Text style={[styles.blinds, { fontSize: 88 * scale, lineHeight: 96 * scale }]}>
+                  {formatBlinds(currentLevel.smallBlind, currentLevel.bigBlind)}
+                </Text>
+                {currentLevel.ante > 0 ? (
+                  <Text style={[styles.ante, { fontSize: 24 * scale }]}>
+                    Ante {formatChips(currentLevel.ante)}
+                  </Text>
+                ) : null}
+              </>
+            )}
 
-          <View style={[styles.statusBadge, tournament.timerStatus === 'running' && styles.statusRunning]}>
+            {!currentIsBreak && currentBlindNumber ? (
+              <Text style={[styles.levelNumber, { fontSize: 22 * scale }]}>
+                NIVEAU {currentBlindNumber}
+              </Text>
+            ) : null}
+            <Text style={[styles.levelDuration, { fontSize: 20 * scale }]}>{durationLabel}</Text>
+
             <Text
               style={[
-                styles.statusText,
-                tournament.timerStatus === 'running' && styles.statusTextRunning,
+                styles.timer,
+                { fontSize: 108 * scale, lineHeight: 116 * scale },
+                isLowTime && styles.timerWarning,
               ]}
             >
-              {statusLabel}
+              {formatTime(tournament.remainingSeconds)}
             </Text>
+
+            <View
+              style={[styles.statusBadge, tournament.timerStatus === 'running' && styles.statusRunning]}
+            >
+              <Text
+                style={[
+                  styles.statusText,
+                  { fontSize: 14 * scale },
+                  tournament.timerStatus === 'running' && styles.statusTextRunning,
+                ]}
+              >
+                {statusLabel}
+              </Text>
+            </View>
           </View>
-        </View>
 
-        <View style={styles.bottomBar}>
-          <View style={styles.statsColumn}>
-            <View style={styles.statBlock}>
-              <View style={styles.statStackedSection}>
-                <Text style={styles.statLabel}>Joueurs restants</Text>
-                <Text style={styles.statValueLarge}>
-                  {stats.active}
-                  <Text style={styles.statValueMuted}> / {stats.total}</Text>
+          <View style={[styles.sidePanel, isLandscape && styles.sidePanelLandscape]}>
+            <View style={[styles.statBlock, styles.statBlockCompact]}>
+              <Text style={[styles.statLabel, { fontSize: 11 * scale }]}>Joueurs restants</Text>
+              <Text style={[styles.statValueLarge, { fontSize: 32 * scale }]}>
+                {stats.active}
+                <Text style={[styles.statValueMuted, { fontSize: 22 * scale }]}>
+                  {' '}
+                  / {stats.total}
                 </Text>
-              </View>
-
-              <View style={styles.statDivider} />
-
-              <View style={styles.statStackedSection}>
-                <Text style={styles.statLabel}>Stack moyen</Text>
-                <Text style={styles.statValueLarge}>{formatChips(stats.avgStack)}</Text>
-                <Text style={styles.statHint}>
-                  {stats.active > 0
-                    ? `Sur ${stats.active} joueur${stats.active > 1 ? 's' : ''} restant${stats.active > 1 ? 's' : ''}`
-                    : 'Aucun joueur en jeu'}
-                </Text>
-              </View>
+              </Text>
+              <Text style={[styles.statLabel, { fontSize: 11 * scale, marginTop: 8 }]}>
+                Stack moyen
+              </Text>
+              <Text style={[styles.statValueLarge, { fontSize: 28 * scale }]}>
+                {formatChips(stats.avgStack)}
+              </Text>
             </View>
 
-            <View style={[styles.statBlock, styles.statBlockWide]}>
-              <Text style={styles.statLabel}>Prize pool</Text>
-              <Text style={styles.statValueLarge}>{formatMoney(stats.prizePool)}</Text>
-              <View style={styles.prizeBreakdown}>
-                <Text style={styles.prizeLine}>
-                  Buy-in · {stats.buyIns} × {formatMoney(tournament.entry.buyInPrice)} ={' '}
-                  {formatMoney(stats.prizeBreakdown.buyIn)}
-                </Text>
-                {tournament.entry.rebuysEnabled ? (
-                  <Text style={styles.prizeLine}>
-                    Recave · {stats.rebuys} × {formatMoney(tournament.entry.rebuyPrice)} ={' '}
-                    {formatMoney(stats.prizeBreakdown.rebuy)}
-                  </Text>
-                ) : null}
-                {tournament.entry.addOnEnabled ? (
-                  <Text style={styles.prizeLine}>
-                    Add-on · {stats.addOns} × {formatMoney(tournament.entry.addOnPrice)} ={' '}
-                    {formatMoney(stats.prizeBreakdown.addOn)}
-                  </Text>
-                ) : null}
-              </View>
-
+            <View style={[styles.statBlock, styles.statBlockCompact, styles.statBlockFlex]}>
+              <Text style={[styles.statLabel, { fontSize: 11 * scale }]}>Prize pool</Text>
+              <Text style={[styles.statValueLarge, { fontSize: 30 * scale }]}>
+                {formatMoney(stats.prizePool)}
+              </Text>
+              <Text style={[styles.prizeLine, { fontSize: 12 * scale }]}>
+                Buy-in {stats.buyIns} · Recave {stats.rebuys} · Add-on {stats.addOns}
+              </Text>
               {stats.payouts.length > 0 ? (
                 <View style={styles.payoutList}>
                   {stats.payouts.map((payout) => (
                     <View key={payout.place} style={styles.payoutRow}>
-                      <Text style={styles.payoutPlace}>{formatPlaceLabel(payout.place)}</Text>
-                      <Text style={styles.payoutPercent}>{payout.percent}%</Text>
-                      <Text style={styles.payoutAmount}>{formatMoney(payout.amount)}</Text>
+                      <Text style={[styles.payoutPlace, { fontSize: 13 * scale }]}>
+                        {formatPlaceLabel(payout.place)}
+                      </Text>
+                      <Text style={[styles.payoutPercent, { fontSize: 12 * scale }]}>
+                        {payout.percent}%
+                      </Text>
+                      <Text style={[styles.payoutAmount, { fontSize: 14 * scale }]}>
+                        {formatMoney(payout.amount)}
+                      </Text>
                     </View>
                   ))}
                 </View>
               ) : null}
             </View>
-          </View>
 
-          {nextLevel ? (
-            <View style={[styles.nextLevelPanel, nextIsBreak && styles.nextLevelPanelBreak]}>
-              <Text style={styles.nextLevelLabel}>
-                {nextIsBreak ? 'Prochaine pause' : 'Prochain niveau'}
-              </Text>
-              {nextIsBreak ? (
-                <>
-                  <Text style={styles.nextLevelBreak}>PAUSE</Text>
-                  <Text style={styles.nextLevelMeta}>
-                    {nextLevel.durationMinutes} min
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.nextLevelBlinds}>
-                    {formatBlinds(nextLevel.smallBlind, nextLevel.bigBlind)}
-                  </Text>
-                  {nextLevel.ante > 0 ? (
-                    <Text style={styles.nextLevelAnte}>
-                      Ante {formatChips(nextLevel.ante)}
+            {nextLevel ? (
+              <View
+                style={[
+                  styles.statBlock,
+                  styles.statBlockCompact,
+                  nextIsBreak && styles.nextLevelPanelBreak,
+                ]}
+              >
+                <Text style={[styles.statLabel, { fontSize: 11 * scale }]}>
+                  {nextIsBreak ? 'Prochaine pause' : 'Prochain niveau'}
+                </Text>
+                {nextIsBreak ? (
+                  <>
+                    <Text style={[styles.nextLevelBreak, { fontSize: 32 * scale }]}>PAUSE</Text>
+                    <Text style={[styles.nextLevelMeta, { fontSize: 14 * scale }]}>
+                      {nextLevel.durationMinutes} min
                     </Text>
-                  ) : null}
-                  <Text style={styles.nextLevelMeta}>
-                    Niveau {nextLevel.level} · {nextLevel.durationMinutes} min
-                  </Text>
-                </>
-              )}
-            </View>
-          ) : null}
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.nextLevelBlinds, { fontSize: 36 * scale }]}>
+                      {formatBlinds(nextLevel.smallBlind, nextLevel.bigBlind)}
+                    </Text>
+                    {nextLevel.ante > 0 ? (
+                      <Text style={[styles.nextLevelMeta, { fontSize: 13 * scale }]}>
+                        Ante {formatChips(nextLevel.ante)}
+                      </Text>
+                    ) : null}
+                    <Text style={[styles.nextLevelMeta, { fontSize: 13 * scale }]}>
+                      Niv. {nextLevel.level} · {nextLevel.durationMinutes} min
+                    </Text>
+                  </>
+                )}
+              </View>
+            ) : null}
+          </View>
         </View>
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -291,57 +302,79 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: pokerTheme.background,
   },
-  content: {
-    padding: 32,
-    minHeight: '100%',
-    gap: 20,
+  page: {
+    flex: 1,
+    padding: 16,
+    gap: 12,
+  },
+  pageLandscape: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  pagePortrait: {
+    padding: 16,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
   },
   topBar: {
-    gap: 4,
+    flex: 1,
+    gap: 2,
   },
-  lateRegBanner: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: pokerTheme.surface,
-    borderWidth: 1,
-    borderColor: pokerTheme.goldMuted,
-  },
-  lateRegBannerClosed: {
-    borderColor: pokerTheme.border,
+  fullscreenButton: {
     backgroundColor: pokerTheme.surfaceAlt,
+    borderWidth: 1,
+    borderColor: pokerTheme.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  lateRegText: {
+  fullscreenLabel: {
     color: pokerTheme.gold,
-    fontSize: 14,
     fontWeight: '700',
+    fontSize: 14,
   },
-  lateRegTextClosed: {
+  lateRegInline: {
+    color: pokerTheme.gold,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  lateRegInlineClosed: {
     color: pokerTheme.textMuted,
   },
   tournamentName: {
     color: pokerTheme.textMuted,
-    fontSize: 22,
     fontWeight: '600',
   },
   roomCode: {
     color: pokerTheme.gold,
-    fontSize: 16,
     fontWeight: '700',
   },
+  main: {
+    flex: 1,
+    gap: 12,
+  },
+  mainLandscape: {
+    flexDirection: 'row',
+    gap: 14,
+  },
   heroPanel: {
+    flex: 1,
     backgroundColor: pokerTheme.felt,
-    borderRadius: 28,
-    paddingVertical: 48,
-    paddingHorizontal: 32,
+    borderRadius: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
     borderWidth: 2,
     borderColor: pokerTheme.goldMuted,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    minHeight: 420,
+    gap: 4,
+  },
+  heroPanelLandscape: {
+    flex: 1.4,
   },
   heroPanelBreak: {
     borderColor: pokerTheme.accent,
@@ -349,7 +382,7 @@ const styles = StyleSheet.create({
   breakHero: {
     color: pokerTheme.accent,
     fontWeight: '900',
-    letterSpacing: 8,
+    letterSpacing: 6,
     textAlign: 'center',
   },
   blindsLabel: {
@@ -367,38 +400,31 @@ const styles = StyleSheet.create({
   ante: {
     color: pokerTheme.gold,
     fontWeight: '700',
-    marginTop: 4,
-  },
-  divider: {
-    width: '50%',
-    height: 2,
-    backgroundColor: pokerTheme.border,
-    marginVertical: 20,
   },
   levelNumber: {
     color: pokerTheme.gold,
     fontWeight: '800',
-    letterSpacing: 3,
+    letterSpacing: 2,
+    marginTop: 4,
   },
   levelDuration: {
     color: pokerTheme.text,
     fontWeight: '700',
-    marginBottom: 8,
   },
   timer: {
     color: pokerTheme.accent,
     fontWeight: '900',
-    letterSpacing: 6,
-    marginVertical: 8,
+    letterSpacing: 4,
+    marginVertical: 4,
     fontVariant: ['tabular-nums'],
   },
   timerWarning: {
     color: pokerTheme.danger,
   },
   statusBadge: {
-    marginTop: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    marginTop: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: pokerTheme.surfaceAlt,
     borderWidth: 1,
@@ -410,145 +436,93 @@ const styles = StyleSheet.create({
   },
   statusText: {
     color: pokerTheme.text,
-    fontSize: 18,
     fontWeight: '700',
   },
   statusTextRunning: {
     color: '#102018',
   },
-  nextLevelPanel: {
+  sidePanel: {
+    gap: 10,
+  },
+  sidePanelLandscape: {
     flex: 1,
-    minWidth: 280,
-    backgroundColor: pokerTheme.surface,
-    borderRadius: 20,
-    paddingVertical: 28,
-    paddingHorizontal: 32,
-    borderWidth: 1,
-    borderColor: pokerTheme.goldMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  nextLevelPanelBreak: {
-    borderColor: pokerTheme.accent,
-  },
-  nextLevelBreak: {
-    color: pokerTheme.accent,
-    fontSize: 48,
-    fontWeight: '900',
-    letterSpacing: 4,
-  },
-  nextLevelLabel: {
-    color: pokerTheme.textMuted,
-    fontSize: 16,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 2,
-  },
-  nextLevelBlinds: {
-    color: pokerTheme.gold,
-    fontSize: 56,
-    fontWeight: '900',
-    letterSpacing: 2,
-  },
-  nextLevelAnte: {
-    color: pokerTheme.textMuted,
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  nextLevelMeta: {
-    color: pokerTheme.textMuted,
-    fontSize: 18,
-  },
-  bottomBar: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 20,
-    alignItems: 'stretch',
-  },
-  statsColumn: {
-    flex: 2,
-    minWidth: 320,
-    gap: 16,
+    minWidth: 260,
+    maxWidth: 420,
   },
   statBlock: {
     backgroundColor: pokerTheme.surface,
-    borderRadius: 18,
-    padding: 22,
+    borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
     borderColor: pokerTheme.border,
-    gap: 6,
+    gap: 4,
   },
-  statStackedSection: {
-    gap: 6,
+  statBlockCompact: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
-  statDivider: {
-    height: 1,
-    backgroundColor: pokerTheme.border,
-    marginVertical: 8,
-  },
-  statBlockWide: {
+  statBlockFlex: {
     flex: 1,
   },
   statLabel: {
     color: pokerTheme.textMuted,
-    fontSize: 14,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   statValueLarge: {
     color: pokerTheme.text,
-    fontSize: 40,
     fontWeight: '900',
   },
   statValueMuted: {
     color: pokerTheme.textMuted,
-    fontSize: 28,
     fontWeight: '700',
-  },
-  statHint: {
-    color: pokerTheme.textMuted,
-    fontSize: 14,
-    marginTop: 2,
-  },
-  prizeBreakdown: {
-    marginTop: 8,
-    gap: 4,
   },
   prizeLine: {
     color: pokerTheme.textMuted,
-    fontSize: 15,
-    lineHeight: 22,
+    marginTop: 4,
   },
   payoutList: {
-    marginTop: 12,
-    gap: 6,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: pokerTheme.border,
+    marginTop: 8,
+    gap: 4,
   },
   payoutRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   payoutPlace: {
     color: pokerTheme.text,
     fontWeight: '700',
-    width: 40,
+    width: 36,
   },
   payoutPercent: {
     color: pokerTheme.textMuted,
     fontWeight: '600',
-    width: 48,
+    width: 40,
   },
   payoutAmount: {
     color: pokerTheme.gold,
     fontWeight: '800',
-    fontSize: 18,
     flex: 1,
     textAlign: 'right',
+  },
+  nextLevelPanelBreak: {
+    borderColor: pokerTheme.accent,
+  },
+  nextLevelBreak: {
+    color: pokerTheme.accent,
+    fontWeight: '900',
+    letterSpacing: 3,
+  },
+  nextLevelBlinds: {
+    color: pokerTheme.gold,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  nextLevelMeta: {
+    color: pokerTheme.textMuted,
+    fontWeight: '600',
   },
   waitingCard: {
     flex: 1,

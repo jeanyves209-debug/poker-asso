@@ -2,10 +2,15 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { LogBox, Platform } from 'react-native';
 import 'react-native-reanimated';
 
 import { pokerTheme } from '@/constants/theme';
 import { TournamentProvider } from '@/lib/tournament-store';
+
+if (Platform.OS === 'web') {
+  LogBox.ignoreAllLogs();
+}
 
 export {
   ErrorBoundary,

@@ -226,44 +226,30 @@ export default function ControlScreen() {
           />
         </View>
 
-        {isRemoteSyncEnabled() ? (
-          <View
-            style={[
-              styles.syncCard,
-              cloudSynced === false && styles.syncCardError,
-              cloudSynced === true && styles.syncCardOk,
-            ]}
-          >
+        {isRemoteSyncEnabled() && cloudSynced === false ? (
+          <View style={[styles.syncCard, styles.syncCardError]}>
             <Text style={styles.syncCardTitle}>
-              {cloudSynced === null || syncing
-                ? 'Synchronisation en cours…'
-                : cloudSynced
-                  ? 'Écran TV connecté au cloud'
-                  : 'Échec sync cloud — l’écran TV ne voit pas le tournoi'}
+              Sync cloud en échec — l’écran TV peut avoir du retard
             </Text>
             <Text style={styles.syncCardHint}>
-              {cloudSynced === false
-                ? 'Le serveur Render peut mettre 30 s à démarrer. Appuyez sur « Forcer la sync » puis rouvrez l’écran TV.'
-                : 'Ouvrez le lien d’affichage sur la TV uniquement après ce message vert.'}
+              Attendez 30 s (Render se réveille) puis appuyez sur « Forcer la sync ».
             </Text>
-            {cloudSynced === false ? (
-              <ActionButton
-                label={syncing ? 'Sync…' : 'Forcer la sync'}
-                disabled={syncing}
-                onPress={async () => {
-                  setSyncing(true);
-                  const ok = await syncToCloud();
-                  setSyncing(false);
-                  if (!ok) {
-                    Alert.alert(
-                      'Sync échouée',
-                      'Impossible d’envoyer le tournoi au serveur. Attendez 30 s et réessayez.'
-                    );
-                  }
-                }}
-                variant="secondary"
-              />
-            ) : null}
+            <ActionButton
+              label={syncing ? 'Sync…' : 'Forcer la sync'}
+              disabled={syncing}
+              onPress={async () => {
+                setSyncing(true);
+                const ok = await syncToCloud();
+                setSyncing(false);
+                if (!ok) {
+                  Alert.alert(
+                    'Sync échouée',
+                    'Impossible d’envoyer le tournoi au serveur. Attendez 30 s et réessayez.'
+                  );
+                }
+              }}
+              variant="secondary"
+            />
           </View>
         ) : null}
 
