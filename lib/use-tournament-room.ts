@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import { isRemoteSyncEnabled } from '@/lib/config';
 import { subscribeToTournamentStream } from '@/lib/remote-stream';
@@ -29,39 +29,56 @@ function catchUpRunningTimer(tournament: Tournament): Tournament {
   };
 }
 
-function roomReducer(
-  state: Tournament | null,
-  action: TournamentAction
-): Tournament | null {
-  if (action.type === 'LOAD') {
-    return catchUpRunningTimer(normalizeTournament(action.tournament));
-  }
-  if (!state) {
-    return state;
-  }
-  return tournamentReducer(state, action);
-}
-
 function shouldApplyRemoteState(current: Tournament | null, remote: Tournament): boolean {
   if (!current) {
+    return true;
+  }
+  // Play/pause and level changes must always win over local display ticks.
+  if (remote.timerStatus !== current.timerStatus) {
+    return true;
+  }
+  if (remote.currentLevelIndex !== current.currentLevelIndex) {
+    return true;
+  }
+  if (remote.players.length !== current.players.length) {
     return true;
   }
   if (remote.updatedAt > current.updatedAt) {
     return true;
   }
   if (remote.updatedAt === current.updatedAt) {
-    return (
-      remote.timerStatus !== current.timerStatus ||
-      remote.currentLevelIndex !== current.currentLevelIndex ||
-      remote.remainingSeconds !== current.remainingSeconds ||
-      remote.players.length !== current.players.length
-    );
+    return remote.remainingSeconds !== current.remainingSeconds;
   }
   return false;
 }
 
+function createRoomReducer(readOnly: boolean) {
+  return function roomReducer(
+    state: Tournament | null,
+    action: TournamentAction
+  ): Tournament | null {
+    if (action.type === 'LOAD') {
+      return catchUpRunningTimer(normalizeTournament(action.tournament));
+    }
+    if (!state) {
+      return state;
+    }
+    if (readOnly && action.type === 'TICK') {
+      if (state.timerStatus !== 'running' || state.remainingSeconds <= 0) {
+        return state;
+      }
+      return {
+        ...state,
+        remainingSeconds: state.remainingSeconds - 1,
+      };
+    }
+    return tournamentReducer(state, action);
+  };
+}
+
 export function useTournamentRoom(roomCode: string, options?: { readOnly?: boolean }) {
   const readOnly = options?.readOnly ?? false;
+  const roomReducer = useMemo(() => createRoomReducer(readOnly), [readOnly]);
   const [tournament, dispatch] = useReducer(roomReducer, null);
   const [isLoading, setIsLoading] = useState(true);
   const [cloudSynced, setCloudSynced] = useState<boolean | null>(null);
