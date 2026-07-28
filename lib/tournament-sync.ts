@@ -1,11 +1,17 @@
 import { Platform, Share } from 'react-native';
 
-import { getAppUrl, isRemoteSyncEnabled } from '@/lib/config';
+import { getAppUrl } from '@/lib/config';
 import {
   fetchRemoteTournament,
   fetchRemoteTournamentQuick,
   saveRemoteTournament,
 } from '@/lib/remote-sync';
+import {
+  getActiveSyncUrls,
+  getLocalSyncUrl,
+  isAnySyncEnabled,
+  isLocalNetworkUrl,
+} from '@/lib/sync-url';
 import { storageGetItem, storageSetItem } from '@/lib/storage';
 import { buildTournamentSummary, normalizeTournament } from '@/lib/tournament-utils';
 import { SavedTournamentSummary } from '@/types/saved-tournament';
@@ -51,7 +57,18 @@ function pickLatestTournament(
   return remote ?? local;
 }
 
-function flushScheduledCloudSave(): Promise<void> {
+async function saveToCloudEndpoints(tournament: Tournament): Promise<boolean> {
+  const cloudUrls = (await getActiveSyncUrls()).filter((url) => !isLocalNetworkUrl(url));
+  if (cloudUrls.length === 0) {
+    return true;
+  }
+  const results = await Promise.all(
+    cloudUrls.map((url) => saveRemoteTournament(tournament, url))
+  );
+  return results.some(Boolean);
+}
+
+function flushScheduledCloudSave(): Promise<boolean> {
   if (cloudSaveTimeout) {
     clearTimeout(cloudSaveTimeout);
     cloudSaveTimeout = null;
@@ -59,15 +76,12 @@ function flushScheduledCloudSave(): Promise<void> {
   const tournament = pendingCloudTournament;
   pendingCloudTournament = null;
   if (!tournament) {
-    return Promise.resolve();
+    return Promise.resolve(true);
   }
-  return saveRemoteTournament(tournament).then(() => undefined);
+  return saveToCloudEndpoints(tournament);
 }
 
 function scheduleCloudSave(tournament: Tournament): void {
-  if (!isRemoteSyncEnabled()) {
-    return;
-  }
   pendingCloudTournament = tournament;
   const delay =
     tournament.timerStatus === 'running'
@@ -81,9 +95,17 @@ function scheduleCloudSave(tournament: Tournament): void {
     const payload = pendingCloudTournament;
     pendingCloudTournament = null;
     if (payload) {
-      void saveRemoteTournament(payload);
+      void saveToCloudEndpoints(payload);
     }
   }, delay);
+}
+
+async function saveToLocalEndpoints(tournament: Tournament): Promise<void> {
+  const localUrls = (await getActiveSyncUrls()).filter(isLocalNetworkUrl);
+  if (localUrls.length === 0) {
+    return;
+  }
+  await Promise.all(localUrls.map((url) => saveRemoteTournament(tournament, url)));
 }
 
 export async function saveTournament(
@@ -94,11 +116,13 @@ export async function saveTournament(
   await storageSetItem(LAST_ACTIVE_KEY, tournament.roomCode);
   await updateRecentIndex(tournament);
 
+  void saveToLocalEndpoints(tournament);
+
   let cloudSaved = true;
-  if (isRemoteSyncEnabled()) {
+  const cloudUrls = (await getActiveSyncUrls()).filter((url) => !isLocalNetworkUrl(url));
+  if (cloudUrls.length > 0) {
     if (options?.immediate) {
-      await flushScheduledCloudSave();
-      cloudSaved = await saveRemoteTournament(tournament);
+      cloudSaved = await flushScheduledCloudSave();
     } else {
       scheduleCloudSave(tournament);
     }
@@ -109,12 +133,13 @@ export async function saveTournament(
 }
 
 export async function pushTournamentToCloud(tournament: Tournament): Promise<boolean> {
-  if (!isRemoteSyncEnabled()) {
+  if (!(await isAnySyncEnabled())) {
     return false;
   }
   await writeLocalTournament(tournament);
   await flushScheduledCloudSave();
-  return saveRemoteTournament(tournament);
+  await saveToLocalEndpoints(tournament);
+  return saveToCloudEndpoints(tournament);
 }
 
 async function updateRecentIndex(tournament: Tournament): Promise<void> {
@@ -140,7 +165,8 @@ export async function loadTournament(
   options?: { quick?: boolean }
 ): Promise<Tournament | null> {
   const code = roomCode.toUpperCase();
-  const remotePromise = isRemoteSyncEnabled()
+  const syncEnabled = await isAnySyncEnabled();
+  const remotePromise = syncEnabled
     ? options?.quick
       ? fetchRemoteTournamentQuick(code)
       : fetchRemoteTournament(code)
@@ -228,7 +254,7 @@ export function subscribeToTournament(
   };
 }
 
-export function getDisplayUrl(roomCode: string): string {
+function buildDisplayPath(roomCode: string): string {
   const appUrl = getAppUrl();
   if (appUrl) {
     return `${appUrl}/display/${roomCode}`;
@@ -239,6 +265,20 @@ export function getDisplayUrl(roomCode: string): string {
   }
 
   return `pokerasso://display/${roomCode}`;
+}
+
+export function getDisplayUrl(roomCode: string): string {
+  return buildDisplayPath(roomCode);
+}
+
+export async function getDisplayUrlAsync(roomCode: string): Promise<string> {
+  const base = buildDisplayPath(roomCode);
+  const localSync = await getLocalSyncUrl();
+  if (!localSync) {
+    return base;
+  }
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}sync=${encodeURIComponent(localSync)}`;
 }
 
 export function getControlUrl(roomCode: string): string {
@@ -262,3 +302,5 @@ export async function copyToClipboard(text: string): Promise<void> {
 
   await Share.share({ message: text });
 }
+
+export { getLocalSyncUrl, setLocalSyncUrl, isAnySyncEnabled, isLocalSyncEnabled } from '@/lib/sync-url';

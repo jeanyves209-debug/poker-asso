@@ -1,9 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { pokerTheme } from '@/constants/theme';
 import { isRemoteSyncEnabled } from '@/lib/config';
+import { setDisplaySyncOverride } from '@/lib/sync-url';
 import { useFullscreen } from '@/lib/use-fullscreen';
 import { getControlUrl } from '@/lib/tournament-sync';
 import { useTournamentRoom } from '@/lib/use-tournament-room';
@@ -28,15 +29,23 @@ import {
 } from '@/lib/tournament-utils';
 
 export default function DisplayScreen() {
-  const { roomId } = useLocalSearchParams<{ roomId: string }>();
+  const { roomId, sync } = useLocalSearchParams<{ roomId: string; sync?: string | string[] }>();
   const roomCode = (roomId ?? '').toUpperCase();
   const { tournament, isLoading } = useTournamentRoom(roomCode, { readOnly: true });
   const { width, height } = useWindowDimensions();
   const { isFullscreen, toggle, supported } = useFullscreen();
 
+  useEffect(() => {
+    const raw = Array.isArray(sync) ? sync[0] : sync;
+    if (raw) {
+      setDisplaySyncOverride(decodeURIComponent(raw));
+    }
+  }, [sync]);
+
   const isLandscape = width > height;
-  const fitScale = Math.min(width / 1100, height / (isLandscape ? 620 : 900), 1.15);
-  const scale = Math.max(0.65, fitScale);
+  const fitScale = Math.min(width / 1000, height / (isLandscape ? 560 : 820), 1.35);
+  const scale = Math.max(0.75, fitScale);
+  const heroScale = scale * 1.12;
 
   const currentLevel = tournament?.levels[tournament.currentLevelIndex];
   const nextLevel = tournament?.levels[tournament.currentLevelIndex + 1];
@@ -89,8 +98,8 @@ export default function DisplayScreen() {
           <Text style={styles.waitingTitle}>En attente du tournoi</Text>
           <Text style={styles.waitingCode}>Salle {roomCode || '——'}</Text>
           <Text style={styles.waitingText}>
-            {isRemoteSyncEnabled()
-              ? `Le tournoi n’est pas encore sur le serveur. Sur le téléphone, ouvrez le contrôle :\n${getControlUrl(roomCode)}`
+            {isRemoteSyncEnabled() || sync
+              ? `Le tournoi n’est pas encore synchronisé. Sur le téléphone, ouvrez le contrôle :\n${getControlUrl(roomCode)}`
               : `Ouvrez le contrôle sur le même navigateur :\n${getControlUrl(roomCode)}`}
           </Text>
         </View>
@@ -159,19 +168,19 @@ export default function DisplayScreen() {
           >
             {currentIsBreak ? (
               <>
-                <Text style={[styles.blindsLabel, { fontSize: 18 * scale }]}>Pause tournoi</Text>
-                <Text style={[styles.breakHero, { fontSize: 72 * scale, lineHeight: 80 * scale }]}>
+                <Text style={[styles.blindsLabel, { fontSize: 22 * scale }]}>Pause tournoi</Text>
+                <Text style={[styles.breakHero, { fontSize: 96 * heroScale, lineHeight: 104 * heroScale }]}>
                   PAUSE
                 </Text>
               </>
             ) : (
               <>
-                <Text style={[styles.blindsLabel, { fontSize: 18 * scale }]}>Blinds actuelles</Text>
-                <Text style={[styles.blinds, { fontSize: 88 * scale, lineHeight: 96 * scale }]}>
+                <Text style={[styles.blindsLabel, { fontSize: 22 * scale }]}>Blinds actuelles</Text>
+                <Text style={[styles.blinds, { fontSize: 120 * heroScale, lineHeight: 128 * heroScale }]}>
                   {formatBlinds(currentLevel.smallBlind, currentLevel.bigBlind)}
                 </Text>
                 {currentLevel.ante > 0 ? (
-                  <Text style={[styles.ante, { fontSize: 24 * scale }]}>
+                  <Text style={[styles.ante, { fontSize: 30 * scale }]}>
                     Ante {formatChips(currentLevel.ante)}
                   </Text>
                 ) : null}
@@ -179,16 +188,16 @@ export default function DisplayScreen() {
             )}
 
             {!currentIsBreak && currentBlindNumber ? (
-              <Text style={[styles.levelNumber, { fontSize: 22 * scale }]}>
+              <Text style={[styles.levelNumber, { fontSize: 32 * heroScale }]}>
                 NIVEAU {currentBlindNumber}
               </Text>
             ) : null}
-            <Text style={[styles.levelDuration, { fontSize: 20 * scale }]}>{durationLabel}</Text>
+            <Text style={[styles.levelDuration, { fontSize: 26 * scale }]}>{durationLabel}</Text>
 
             <Text
               style={[
                 styles.timer,
-                { fontSize: 108 * scale, lineHeight: 116 * scale },
+                { fontSize: 144 * heroScale, lineHeight: 152 * heroScale },
                 isLowTime && styles.timerWarning,
               ]}
             >

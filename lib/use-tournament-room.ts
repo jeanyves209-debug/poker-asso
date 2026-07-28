@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
-import { isRemoteSyncEnabled } from '@/lib/config';
 import {
   loadTournament,
   pushTournamentToCloud,
   saveTournament,
   subscribeToTournament,
 } from '@/lib/tournament-sync';
+import { isAnySyncEnabled, isLocalSyncEnabled } from '@/lib/sync-url';
 import { tournamentReducer } from '@/lib/tournament-utils';
 import { Tournament, TournamentAction } from '@/types/tournament';
 
-const POLL_RUNNING_MS = 2000;
-const POLL_IDLE_MS = 5000;
+const POLL_LOCAL_RUNNING_MS = 400;
+const POLL_LOCAL_IDLE_MS = 800;
+const POLL_CLOUD_RUNNING_MS = 2000;
+const POLL_CLOUD_IDLE_MS = 5000;
 
 function adjustRunningTimer(tournament: Tournament): Tournament {
   if (tournament.timerStatus !== 'running' || tournament.remainingSeconds <= 0) {
@@ -103,19 +105,43 @@ export function useTournamentRoom(roomCode: string, options?: { readOnly?: boole
   }, [roomCode]);
 
   useEffect(() => {
-    if (!isRemoteSyncEnabled()) {
-      return;
-    }
-    const shouldPoll = readOnly || !tournament;
-    if (!shouldPoll) {
-      return;
-    }
-    const intervalMs =
-      readOnly && tournament?.timerStatus === 'running' ? POLL_RUNNING_MS : POLL_IDLE_MS;
-    const interval = setInterval(() => {
-      void refresh();
-    }, intervalMs);
-    return () => clearInterval(interval);
+    let active = true;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const setup = async () => {
+      const syncEnabled = await isAnySyncEnabled();
+      if (!active || !syncEnabled) {
+        return;
+      }
+
+      const shouldPoll = readOnly || !tournament;
+      if (!shouldPoll) {
+        return;
+      }
+
+      const localSync = await isLocalSyncEnabled();
+      const running = tournament?.timerStatus === 'running';
+      const intervalMs = localSync
+        ? readOnly && running
+          ? POLL_LOCAL_RUNNING_MS
+          : POLL_LOCAL_IDLE_MS
+        : readOnly && running
+          ? POLL_CLOUD_RUNNING_MS
+          : POLL_CLOUD_IDLE_MS;
+
+      interval = setInterval(() => {
+        void refresh();
+      }, intervalMs);
+    };
+
+    void setup();
+
+    return () => {
+      active = false;
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
   }, [readOnly, tournament, refresh]);
 
   useEffect(() => {

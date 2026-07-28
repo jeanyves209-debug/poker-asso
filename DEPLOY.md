@@ -102,7 +102,48 @@ Puis configurez les variables dans le dashboard Vercel et redeployez.
 
 
 
-## Étape 4 — Vérifier que tout fonctionne
+## Étape 4 — Sync WiFi local (recommandé pour la TV)
+
+Pour un affichage quasi instantané (~0,5 s), téléphone et TV doivent pouvoir joindre un **serveur sur le même WiFi**.
+
+> **Important** : si la TV ouvre l’app via **HTTPS** (Vercel), le navigateur **bloque** les requêtes vers un serveur local HTTP.
+> En mode WiFi local, ouvrez l’app en **HTTP** depuis le PC du réseau (voir ci-dessous).
+
+### Sur le PC du tournoi (même WiFi que la TV)
+
+Terminal 1 — serveur de sync :
+```powershell
+cd C:\Users\Baptiste\Projects\poker-asso
+npm run sync-server
+```
+
+Terminal 2 — app web en local (après un export ou clone déjà buildé) :
+```powershell
+cd C:\Users\Baptiste\Projects\poker-asso
+npm run export:web
+npm run serve:lan
+```
+
+Notez l’IP du PC (`ipconfig` → IPv4, ex. `192.168.1.42`).
+
+### Sur le téléphone
+
+1. Ouvrez `http://192.168.1.42:8080` (pas l’URL Vercel)
+2. Contrôle tournoi → onglet **Paramètres** → **Sync WiFi local** → `192.168.1.42:3001`
+3. Copiez le **lien d’affichage** (contient `?sync=…`)
+
+### Sur la TV
+
+Ouvrez le lien d’affichage copié, ex. :
+```
+http://192.168.1.42:8080/display/ABC123?sync=http%3A%2F%2F192.168.1.42%3A3001
+```
+
+Le cloud Render reste actif en secours si configuré.
+
+---
+
+## Étape 5 — Vérifier que tout fonctionne
 
 1. Ouvrez votre URL Vercel sur le téléphone
 2. Créez un tournoi → notez le code salle (ex. `ABC123`)
@@ -110,7 +151,7 @@ Puis configurez les variables dans le dashboard Vercel et redeployez.
   ```
    https://VOTRE-PROJET.vercel.app/display/ABC123
   ```
-4. Depuis le téléphone, pilotez le timer → l’écran TV doit se mettre à jour en ~2 s
+4. Depuis le téléphone, pilotez le timer → l’écran TV doit se mettre à jour en ~0,5 s (WiFi local) ou ~2 s (cloud seul)
 5. Sur l’accueil, le bandeau **« Sync cloud active »** doit apparaître
 
 ---

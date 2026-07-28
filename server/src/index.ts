@@ -55,8 +55,12 @@ serve(
   {
     fetch: app.fetch,
     port,
+    hostname: '0.0.0.0',
   },
   (info) => {
-    console.log(`Poker Asso sync server listening on http://localhost:${info.port}`);
+    console.log(`Poker Asso sync server listening on http://0.0.0.0:${info.port}`);
+    console.log(`  Local:  http://localhost:${info.port}`);
+    console.log(`  WiFi:   http://VOTRE-IP-LOCALE:${info.port}`);
+    console.log(`  (ipconfig → adresse IPv4, ex. 192.168.1.42)`);
   }
 );

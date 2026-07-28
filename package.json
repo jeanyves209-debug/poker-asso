@@ -33,6 +33,7 @@
     "web": "expo start --web",
     "sync-server": "npm run start --prefix server",
     "sync-server:dev": "npm run dev --prefix server",
+    "serve:lan": "npx serve dist -l 8080",
     "export:web": "expo export -p web",
     "vercel-build": "expo export -p web"
   },
